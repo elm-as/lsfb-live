@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lsfb-live"
+version = "0.1.0"
+description = "Reconnaissance en direct de signes isolés de la LSFB (Langue des Signes de Belgique Francophone) à partir des poses MediaPipe."
+readme = "README.md"
+# MediaPipe lags behind recent CPython releases; 3.12 is the newest version all dependencies support.
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "lsfb-dataset",
+    "mediapipe",
+    "numpy",
+    "opencv-python",
+    "pandas",
+    "torch",
+]
+
+[project.optional-dependencies]
+analysis = ["jupyterlab", "matplotlib"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

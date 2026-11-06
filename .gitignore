@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Dataset files are downloaded or generated locally, never versioned.
+data/
+
+# Model task binaries from Google Storage (auto-downloaded by scripts/live.py)
+models/*.task
