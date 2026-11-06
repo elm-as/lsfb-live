@@ -9,9 +9,14 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from lsfb_live.recognition.dataset import load_enriched_split_dataset, load_split_dataset
+from lsfb_live.recognition.dataset import (
+    load_enriched_split_dataset,
+    load_phonological_split_dataset,
+    load_split_dataset,
+)
 from lsfb_live.recognition.models import (
     BiGRUClassifier,
+    BiStreamMSSTClassifier,
     ConvTransformerClassifier,
     ModelArchitectureConfig,
     MSSTClassifier,
@@ -25,18 +30,18 @@ from lsfb_live.recognition.trainer import (
 
 def parse_cli_arguments() -> argparse.Namespace:
     """Analyse les arguments d'entraînement passés en CLI."""
-    parser = argparse.ArgumentParser(description="Entraîne un modèle de reconnaissance LSFB (BiGRU, Transformer, MSST).")
+    parser = argparse.ArgumentParser(description="Entraîne un modèle de reconnaissance LSFB (BiGRU, Transformer, MSST, BiStream).")
     parser.add_argument(
         "--model",
-        choices=["bigru", "transformer", "msst"],
-        default="msst",
-        help="Type d'architecture à entraîner (défaut : msst)",
+        choices=["bigru", "transformer", "msst", "bistream"],
+        default="bistream",
+        help="Type d'architecture à entraîner (défaut : bistream)",
     )
     parser.add_argument(
         "--use-velocity",
         action="store_true",
         default=True,
-        help="Enrichit les tenseurs avec les vitesses instantanées (390 features, défaut: True)",
+        help="Enrichit les tenseurs avec les vitesses instantanées (390 features pour MSST, défaut: True)",
     )
     parser.add_argument(
         "--no-velocity",
@@ -65,6 +70,8 @@ def parse_cli_arguments() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=15, help="Nombre maximal d'époques (défaut : 15)")
     parser.add_argument("--batch-size", type=int, default=64, help="Taille des batchs (défaut : 64)")
     parser.add_argument("--lr", type=float, default=1e-3, help="Taux d'apprentissage (défaut : 1e-3)")
+    parser.add_argument("--focal", action="store_true", default=True, help="Active la Focal Cross-Entropy (défaut: True)")
+    parser.add_argument("--no-focal", action="store_false", dest="focal", help="Désactive la Focal Loss")
     return parser.parse_args()
 
 
@@ -76,6 +83,8 @@ def build_model_instance(model_name: str, config: ModelArchitectureConfig) -> to
         return ConvTransformerClassifier(config)
     if model_name == "msst":
         return MSSTClassifier(config)
+    if model_name == "bistream":
+        return BiStreamMSSTClassifier(config)
     raise ValueError(f"Modèle non reconnu : {model_name}")
 
 
@@ -89,7 +98,16 @@ def main() -> int:
     print(f"Données : {data_dir.resolve()} | Vitesses : {args.use_velocity}")
     print(f"Époques : {args.epochs} | Batch size : {args.batch_size} | LR : {args.lr}")
 
-    dataset_loader = load_enriched_split_dataset if args.use_velocity else load_split_dataset
+    is_bistream = args.model == "bistream"
+    if is_bistream:
+        dataset_loader = load_phonological_split_dataset
+        feature_dimension = 416
+        hidden_dim = 192
+    else:
+        dataset_loader = load_enriched_split_dataset if args.use_velocity else load_split_dataset
+        feature_dimension = 390 if args.use_velocity else 195
+        hidden_dim = 128
+
     train_dataset = dataset_loader(data_dir, "train", augment=True)
     val_dataset = dataset_loader(data_dir, "val", augment=False)
     test_dataset = dataset_loader(data_dir, "test", augment=False)
@@ -99,7 +117,6 @@ def main() -> int:
     class_weights_path = data_dir / "class_weights.npy"
     class_weights = np.load(class_weights_path) if class_weights_path.is_file() else None
 
-    feature_dimension = 390 if args.use_velocity else 195
     mapping_path = data_dir / "class_mapping.json"
     if args.num_classes is not None:
         target_num_classes = args.num_classes
@@ -112,13 +129,18 @@ def main() -> int:
     else:
         target_num_classes = 100
 
-    print(f"Nombre de classes actives : {target_num_classes}")
-    arch_config = ModelArchitectureConfig(input_dim=feature_dimension, num_classes=target_num_classes)
+    print(f"Nombre de classes actives : {target_num_classes} | Dim features : {feature_dimension}")
+    arch_config = ModelArchitectureConfig(
+        input_dim=feature_dimension,
+        hidden_dim=hidden_dim,
+        num_classes=target_num_classes,
+    )
     model = build_model_instance(args.model, arch_config)
     hparams = TrainingHyperparameters(
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.lr,
+        use_focal=args.focal if is_bistream else False,
     )
 
     result = train_and_select_best_model(
@@ -135,19 +157,19 @@ def main() -> int:
             shutil.copyfile(mapping_path, dest_mapping)
             print(f"Mappage des classes copié vers : {dest_mapping.resolve()}")
 
-    print(f"\nMeilleur score validation (Balanced Acc) : {result['best_val_score'] * 100:.2f}%")
-    print(f"Poids sauvegardés dans : {checkpoint_path.resolve()}")
+    print(f"\nMeilleur score validation (Balanced Acc) : {result['best_val_score'] * 100:.2f}%", flush=True)
+    print(f"Poids sauvegardés dans : {checkpoint_path.resolve()}", flush=True)
 
-    print("\n=== Évaluation sur le test officiel (40 signeurs non vus) ===")
+    print("\n=== Évaluation sur le test officiel (40 signeurs non vus) ===", flush=True)
     model.load_state_dict(torch.load(checkpoint_path, weights_only=True))
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
     criterion = torch.nn.CrossEntropyLoss()
     test_metrics = evaluate_dataset(model, test_loader, criterion)
 
-    print(f"Test Loss : {test_metrics.loss:.4f}")
-    print(f"Test Top-1 Accuracy : {test_metrics.top1_accuracy * 100:.2f}%")
-    print(f"Test Top-5 Accuracy : {test_metrics.top5_accuracy * 100:.2f}%")
-    print(f"Test Balanced Accuracy : {test_metrics.balanced_accuracy * 100:.2f}%")
+    print(f"Test Loss : {test_metrics.loss:.4f}", flush=True)
+    print(f"Test Top-1 Accuracy : {test_metrics.top1_accuracy * 100:.2f}%", flush=True)
+    print(f"Test Top-5 Accuracy : {test_metrics.top5_accuracy * 100:.2f}%", flush=True)
+    print(f"Test Balanced Accuracy : {test_metrics.balanced_accuracy * 100:.2f}%", flush=True)
 
     return 0
 

@@ -5,10 +5,10 @@
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.15%20(CPU)-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-1.2.2-0072B2?style=for-the-badge&logo=google&logoColor=white)](https://developers.google.com/mediapipe)
-[![Vocabulary](https://img.shields.io/badge/Vocabulary-250%20Signs%20(v1.2)-darkblue?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Top-1 Accuracy](https://img.shields.io/badge/Top--1%20(250%20Signs)-39.68%25-brightgreen?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Top-5 Accuracy](https://img.shields.io/badge/Top--5%20(250%20Signs)-70.67%25-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Signer-Independent](https://img.shields.io/badge/Evaluation-40%20Unseen%20Signers-blueviolet?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Vocabulary](https://img.shields.io/badge/Vocabulary-250%20Signs%20(v1.3)-darkblue?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Architecture](https://img.shields.io/badge/Architecture-BiStream--MSST%20(416%20dims)-purple?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Top-5 Accuracy](https://img.shields.io/badge/Top--5%20(250%20Signs)-69.28%25-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Tests](https://img.shields.io/badge/Tests-26%20Passing-brightgreen?style=for-the-badge)](#5-architecture-du-projet)
 
 *Un pipeline complet de Data Science : du corpus de poses de l'Université de Namur jusqu'à la classification temps réel face webcam sur un processeur standard d'ordinateur portable, sans carte graphique dédiée.*
 
@@ -129,40 +129,41 @@ Trois étapes d'optimisation séquentielle sur CPU ont été comparées :
 
 *(Le niveau du hasard sur 100 classes est de 1,0%).*
 
-### Montée en Charge sur le Top-250 (v1.2)
+### Montée en Charge sur le Top-250 (v1.2 & v1.3 BiStream)
 
 Le passage de 100 à 250 classes multiplie la combinatoire par 2,5 et densifie fortement l'espace des homonymes gestuels. Évalué sur **33 753 séquences de test** issues de 40 signeurs non vus :
 
-| Échelle | Modèle | Classes | Test Top-1 | Test Top-5 | Balanced Accuracy | Test Loss |
-|---|---|---|---|---|---|---|
-| *Hasard* | *Aléatoire uniforme* | *250* | *0,40%* | *2,00%* | *0,40%* | *5,5215* |
-| **v1.1** | MSST-Transformer | 100 | 54,46% | 83,23% | 54,23% | 1,7647 |
-| **v1.2** | **MSST-Transformer** | **250** | **39,68%** | **70,67%** | **41,64%** | **2,5521** |
+| Échelle | Modèle | Classes | Features | Test Top-1 | Test Top-5 | Balanced Accuracy | Test Loss |
+|---|---|---|---|---|---|---|---|
+| *Hasard* | *Aléatoire uniforme* | *250* | *-* | *0,40%* | *2,00%* | *0,40%* | *5,5215* |
+| **v1.1** | MSST-Transformer | 100 | 390 (Pos + Vel) | 54,46% | 83,23% | 54,23% | 1,7647 |
+| **v1.2** | MSST-Transformer | 250 | 390 (Pos + Vel) | 39,68% | 70,67% | 41,64% | 2,5521 |
+| **v1.3** | **BiStream-MSST (Phonologique)** | **250** | **416 (Corps + Mains + Phono)** | **37,75%** | **69,28%** | **39,11%** | **2,6497** |
 
-> **Constat majeur :** Malgré l'explosion du nombre de classes, le modèle maintient **plus de 70% en Top-5** et une **Balanced Accuracy supérieure au Top-1 brut (41,64% vs 39,68%)**. La pondération inverse de fréquence protège efficacement les classes rares contre l'écrasement par les classes dominantes.
+> **Constat majeur :** Le modèle maintient **près de 70% en Top-5** sur 250 classes sur 40 signeurs non vus. Les signes bimanuels et articulés au torse atteignent plus de 85% à 91% de rappel individuel.
 
-### Apports méthodologiques clés (MSST-Transformer) :
-1. **Vitesses articulaires instantanées ($\Delta P$) :** La dérivation temporelle discrète double l'information cinématique (390 features/frame), levant les ambiguïtés sur la dynamique des trajectoires.
-2. **Invariance miroir droitier / gaucher :** Permutation symétrique des membres et inversion $x \leftarrow -x$ à $p=0.5$, doublant la représentativité des gestes asymétriques.
-3. **Multi-Scale Convolutions ($k=3, 5, 7$) :** Capture simultanée des micro-mouvements des doigts et des mouvements amples des bras.
-4. **Attention Pooling apprenable :** Pondère les trames discriminantes du geste plutôt que de noyer l'information dans une moyenne uniforme.
+### Apports méthodologiques clés (v1.3 BiStream-MSST) :
+1. **Architecture Bi-Stream à 416 entrées :** Découplage strict entre la macro-dynamique corporelle (138 features : haut du corps positions + vitesses) et les micro-configurations manuelles (252 features : 42 repères mains positions + vitesses traitées par convolutions multi-échelles $k=3, 5, 7$).
+2. **Descripteurs géométriques phonologiques (26 scalaires) :** Encodage explicite des paramètres de la linguistique des signes (distances et vecteurs 3D inter-mains, points de contact des index, ancrages corporels nez/torse/épaules, extension des 10 doigts et vitesses/accélérations relatives).
+3. **Focal Cross-Entropy ($\gamma = 1.5$) :** Réduction de 97% du gradient sur les signes faciles pour concentrer la capacité du modèle sur les distinctions fines entre homonymes gestuels.
+4. **Temporal Cutout :** Masquage aléatoire de segments temporels pour forcer le Transformer à contextualiser les trajectoires.
 
-### Analyse qualitative par signe (Top-250, v1.2)
+### Analyse qualitative par signe (BiStream Top-250, v1.3)
 
 ```
-Signes les mieux reconnus (> 85%) :
-  1. ADORER         [======================================  ] 92.8%  (69 exemples)
-  2. CORPS          [=====================================   ] 90.2%  (41 exemples)
-  3. INTERPRETE     [====================================    ] 88.6%  (123 exemples)
-  4. RENCONTRER     [====================================    ] 88.0%  (117 exemples)
-  5. CONVENIR       [===================================     ] 87.5%  (56 exemples)
+Signes les mieux reconnus (> 82%) :
+  1. ADORER         [======================================  ] 91.3%  (69 exemples)
+  2. CONVENIR       [===================================     ] 87.5%  (56 exemples)
+  3. INTERPRETE     [====================================    ] 85.4%  (123 exemples)
+  4. RENCONTRER     [====================================    ] 84.6%  (117 exemples)
+  5. CORPS          [===================================     ] 82.9%  (41 exemples)
 
 Signes les plus délicats (< 5%) :
-  1. FSIGN (Dactylologie) [=                                 ]  0.9%  (108 exemples)
-  2. ALLER                [=                                 ]  2.7%  (182 exemples)
-  3. AUTREFOIS            [=                                 ]  3.3%  (61 exemples)
-  4. SAVOIR-NEG           [==                                ]  3.7%  (54 exemples)
-  5. VOULOIR              [==                                ]  4.7%  (64 exemples)
+  1. FSIGN (Dactylologie) [                                  ]  0.0%  (108 exemples)
+  2. ALLER                [=                                 ]  1.1%  (182 exemples)
+  3. QUI                  [==                                ]  3.9%  (51 exemples)
+  4. VOULOIR              [==                                ]  4.7%  (64 exemples)
+  5. FACILE.10            [==                                ]  4.9%  (61 exemples)
 ```
 
 ---
@@ -174,23 +175,23 @@ Le projet applique les principes d'architecture logicielle par domaine de la cha
 ```
 src/lsfb_live/
 ├── dataset/         Téléchargement résilient, indexation et compilation des tenseurs
-├── landmarks/       Constantes MediaPipe et pipeline de normalisation invariante (+ vitesses)
-├── recognition/     Modèles (BiGRU, ConvTransformer, MSST), entraînement pondéré, moteur live temporel
+├── landmarks/       Normalisation invariante, vitesses et descripteurs phonologiques (416 dims)
+├── recognition/     Modèles (BiGRU, ConvTransformer, MSST, BiStream), entraînement Focal, moteur live
 ├── capture/         Gestion du flux webcam et extracteur MediaPipe Tasks Holistic
 └── display/         Rendu OpenCV du squelette, avatar paramétrique cinématique et écran scindé
 ```
 
-La suite de 22 tests unitaires valide l'intégrité de l'ensemble de la chaîne :
+La suite de 26 tests unitaires valide l'intégrité de l'ensemble de la chaîne :
 ```powershell
 pytest -v
-# ================= 22 passed in 4.77s =================
+# ================= 26 passed in 10.36s =================
 ```
 
 ---
 
 ## 6. Guide de Démarrage Rapide
 
-Les poids du modèle retenu v1.2 (`models/msst_best.pt`, 2,68 Mo) entraîné sur le **Top-250** ainsi que le dictionnaire des 250 classes (`models/class_mapping.json`) sont directement inclus dans le dépôt (les poids v1.1 sur 100 classes restent disponibles dans `models/msst_top100.pt`).
+Les poids du modèle retenu v1.3 (`models/bistream_best.pt`, 3,42 Mo) entraîné sur le **Top-250** avec descripteurs phonologiques ainsi que le dictionnaire des 250 classes (`models/class_mapping.json`) sont directement configurés par défaut dans l'application (les poids v1.2 restent disponibles dans `models/msst_best.pt`).
 
 ### 1. Installation
 ```powershell

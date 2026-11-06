@@ -7,6 +7,12 @@ import torch
 from torch.utils.data import Dataset
 
 
+from lsfb_live.landmarks.phonological_features import (
+    assemble_bistream_features,
+    extract_phonological_features,
+)
+
+
 # Indices des paires symétriques de repères du corps
 _SYMMETRIC_POSE_PAIRS = [
     (1, 4), (2, 5), (3, 6), (7, 8), (9, 10),  # Yeux, oreilles, bouche
@@ -76,6 +82,12 @@ def apply_training_augmentation(
     scale_jitter = np.random.uniform(0.95, 1.05)
     noise = np.random.normal(0.0, noise_std, size=augmented.shape).astype(np.float32)
     augmented = (augmented * scale_jitter) + noise
+
+    # 3. Masquage temporel (Cutout) aléatoire pour forcer la robustesse aux pertes d'images
+    if np.random.rand() < 0.35 and len(augmented) > 10:
+        start_t = np.random.randint(5, len(augmented) - 5)
+        augmented[start_t : start_t + 2, :] = 0.0
+
     return augmented.astype(np.float32)
 
 
@@ -115,7 +127,7 @@ class SignPoseDataset(Dataset):
 
 
 def load_split_dataset(
-    processed_dir: Path,
+    processed_dir: Path | str,
     split_name: str,
     augment: bool = False,
 ) -> SignPoseDataset:
@@ -129,11 +141,12 @@ def load_split_dataset(
     Returns:
         Instance de SignPoseDataset prête pour DataLoader.
     """
-    feat_path = processed_dir / f"{split_name}_features.npy"
-    lab_path = processed_dir / f"{split_name}_labels.npy"
+    path = Path(processed_dir)
+    feat_path = path / f"{split_name}_features.npy"
+    lab_path = path / f"{split_name}_labels.npy"
 
     if not (feat_path.is_file() and lab_path.is_file()):
-        raise FileNotFoundError(f"Fichiers manquants pour le split {split_name} dans {processed_dir}")
+        raise FileNotFoundError(f"Fichiers manquants pour le split {split_name} dans {path}")
 
     features = np.load(feat_path, mmap_mode="r")
     labels = np.load(lab_path)
@@ -161,5 +174,52 @@ def load_enriched_split_dataset(
     velocities[:, 1:, :] = positions[:, 1:, :] - positions[:, :-1, :]
     enriched = np.concatenate([positions, velocities], axis=-1).astype(np.float32)
     return SignPoseDataset(enriched, base_dataset._labels, augment=augment)
+
+
+class PhonologicalSignDataset(Dataset):
+    """Dataset dynamique enrichissant les positions avec vitesses et géométrie phonologique (416 dim)."""
+
+    def __init__(
+        self,
+        positions: np.ndarray,
+        labels: np.ndarray,
+        augment: bool = False,
+    ):
+        if len(positions) != len(labels):
+            raise ValueError(f"Incohérence : {len(positions)} positions vs {len(labels)} labels")
+        self._positions = positions
+        self._labels = labels
+        self._augment = augment
+
+    def __len__(self) -> int:
+        return len(self._labels)
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        pos = np.array(self._positions[index], copy=True)
+        if self._augment:
+            pos = apply_training_augmentation(pos)
+
+        full_sample = assemble_bistream_features(pos)
+        return torch.from_numpy(full_sample).float(), torch.tensor(self._labels[index], dtype=torch.long)
+
+
+def load_phonological_split_dataset(
+    processed_dir: Path,
+    split_name: str,
+    augment: bool = False,
+) -> PhonologicalSignDataset:
+    """Charge le split et configure l'enrichissement phonologique dynamique (416 caractéristiques).
+
+    Args:
+        processed_dir: Dossier contenant les tenseurs préprocessés.
+        split_name: Nom du split ('train', 'val', 'test').
+        augment: Active l'augmentation de données aléatoire.
+
+    Returns:
+        PhonologicalSignDataset prêt pour DataLoader.
+    """
+    base_dataset = load_split_dataset(processed_dir, split_name, augment=False)
+    return PhonologicalSignDataset(base_dataset._features, base_dataset._labels, augment=augment)
+
 
 

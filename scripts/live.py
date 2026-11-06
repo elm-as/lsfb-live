@@ -20,8 +20,8 @@ def parse_cli_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--model-path",
         type=Path,
-        default=Path("models/msst_best.pt"),
-        help="Poids du modèle entraîné (défaut : models/msst_best.pt)",
+        default=Path("models/bistream_best.pt"),
+        help="Poids du modèle entraîné (défaut : models/bistream_best.pt)",
     )
     parser.add_argument(
         "--mapping-path",
@@ -37,9 +37,9 @@ def parse_cli_arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model-type",
-        choices=["bigru", "transformer", "msst"],
-        default="msst",
-        help="Architecture du réseau (défaut : msst)",
+        choices=["bigru", "transformer", "msst", "bistream"],
+        default="bistream",
+        help="Architecture du réseau (défaut : bistream)",
     )
     parser.add_argument("--camera-index", type=int, default=0, help="Index de la webcam (défaut : 0)")
     parser.add_argument("--threshold", type=float, default=0.40, help="Seuil de confiance minimal (défaut : 0.40)")

@@ -62,7 +62,8 @@ def parse_cli_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Mode entraînement interactif avec Avatar LSFB.")
     parser.add_argument("--camera-index", type=int, default=0, help="Index de la caméra (défaut : 0)")
     parser.add_argument("--threshold", type=float, default=0.25, help="Seuil de détection pour valider le signe (défaut : 0.25)")
-    parser.add_argument("--model-path", type=Path, default=Path("models/msst_best.pt"), help="Poids du modèle")
+    parser.add_argument("--model-path", type=Path, default=None, help="Poids du modèle (défaut: bistream_best.pt ou msst_best.pt)")
+    parser.add_argument("--model-type", type=str, default="bistream", choices=["bigru", "transformer", "msst", "bistream"], help="Architecture (défaut: bistream)")
     parser.add_argument("--mapping-path", type=Path, default=Path("models/class_mapping.json"), help="Fichier de mappage")
     return parser.parse_args()
 
@@ -164,13 +165,24 @@ def main() -> int:
     print(f"Catalogue de {len(GUIDED_SIGNS)} signes canoniques charges.")
     print("Commandes dans la fenetre : [N] Suivant | [P] Precedent | [Q] Quitter")
 
+    # Sélection automatique du meilleur modèle disponible
+    model_type = args.model_type
+    if args.model_path is not None:
+        model_path = args.model_path
+    elif Path("models/bistream_best.pt").is_file():
+        model_path = Path("models/bistream_best.pt")
+        model_type = "bistream"
+    else:
+        model_path = Path("models/msst_best.pt")
+        model_type = "msst"
+
     try:
         stream = WebcamStream(camera_index=args.camera_index)
         extractor = HolisticExtractor(Path("models/holistic_landmarker.task"))
         engine = LiveInferenceEngine(
-            model_path=args.model_path,
+            model_path=model_path,
             mapping_path=args.mapping_path,
-            model_type="msst",
+            model_type=model_type,
             confidence_threshold=args.threshold,
         )
     except Exception as init_error:

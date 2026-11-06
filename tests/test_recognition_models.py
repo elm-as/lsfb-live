@@ -10,6 +10,7 @@ from lsfb_live.recognition.metrics import (
 )
 from lsfb_live.recognition.models import (
     BiGRUClassifier,
+    BiStreamMSSTClassifier,
     ConvTransformerClassifier,
     ModelArchitectureConfig,
     MSSTClassifier,
@@ -47,6 +48,17 @@ def test_msst_classifier_produces_expected_output_shape():
     logits = model(dummy_input)
 
     assert logits.shape == (4, 10)
+
+
+def test_bistream_msst_classifier_produces_expected_output_shape():
+    """Vérifie la forme des logits du BiStreamMSSTClassifier avec 416 entrées."""
+    config = ModelArchitectureConfig(input_dim=416, hidden_dim=192, num_classes=25)
+    model = BiStreamMSSTClassifier(config)
+
+    dummy_input = torch.randn(4, 40, 416)
+    logits = model(dummy_input)
+
+    assert logits.shape == (4, 25)
 
 
 def test_apply_handedness_mirror_is_an_involution():

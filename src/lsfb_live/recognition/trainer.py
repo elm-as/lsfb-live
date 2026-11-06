@@ -37,6 +37,41 @@ class TrainingHyperparameters:
     label_smoothing: float = 0.05
     patience: int = 6
     device: str = "cpu"
+    use_focal: bool = True
+    focal_gamma: float = 1.5
+
+
+class FocalCrossEntropyLoss(nn.Module):
+    """Fonction de perte Focal Loss avec lissage d'étiquettes et pondération de classe."""
+
+    def __init__(
+        self,
+        weight: Optional[torch.Tensor] = None,
+        gamma: float = 1.5,
+        label_smoothing: float = 0.05,
+    ):
+        super().__init__()
+        self.weight = weight
+        self.gamma = gamma
+        self.label_smoothing = label_smoothing
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        num_classes = logits.size(-1)
+        log_probs = torch.log_softmax(logits, dim=-1)
+        probs = torch.exp(log_probs)
+
+        # Cibles lissées
+        smooth_targets = torch.full_like(log_probs, self.label_smoothing / (num_classes - 1))
+        smooth_targets.scatter_(-1, targets.unsqueeze(-1), 1.0 - self.label_smoothing)
+
+        # Modulation focale : (1 - p_c)^gamma
+        focal_weight = torch.pow(1.0 - probs, self.gamma)
+        loss = -smooth_targets * focal_weight * log_probs
+
+        if self.weight is not None:
+            loss = loss * self.weight.unsqueeze(0)
+
+        return loss.sum(dim=-1).mean()
 
 
 def train_single_epoch(
@@ -60,6 +95,9 @@ def train_single_epoch(
 
         total_loss += loss.item()
         batch_count += 1
+
+        if batch_count % 100 == 0:
+            print(f"    [Batch {batch_count:03d}/{len(dataloader)}] Perte courante : {loss.item():.4f}", flush=True)
 
     return total_loss / max(batch_count, 1)
 
@@ -119,7 +157,14 @@ def train_and_select_best_model(
     model.to(device)
 
     weights_tensor = torch.from_numpy(class_weights).float().to(device) if class_weights is not None else None
-    criterion = nn.CrossEntropyLoss(weight=weights_tensor, label_smoothing=hparams.label_smoothing)
+    if hparams.use_focal:
+        criterion = FocalCrossEntropyLoss(
+            weight=weights_tensor,
+            gamma=hparams.focal_gamma,
+            label_smoothing=hparams.label_smoothing,
+        )
+    else:
+        criterion = nn.CrossEntropyLoss(weight=weights_tensor, label_smoothing=hparams.label_smoothing)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=hparams.learning_rate,
@@ -142,7 +187,8 @@ def train_and_select_best_model(
             f"Val Loss: {val_metrics.loss:.4f} | "
             f"Val Top-1: {val_metrics.top1_accuracy * 100:.2f}% | "
             f"Val Top-5: {val_metrics.top5_accuracy * 100:.2f}% | "
-            f"Val Balanced: {val_metrics.balanced_accuracy * 100:.2f}%"
+            f"Val Balanced: {val_metrics.balanced_accuracy * 100:.2f}%",
+            flush=True,
         )
 
         current_score = val_metrics.balanced_accuracy

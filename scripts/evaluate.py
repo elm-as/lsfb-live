@@ -8,9 +8,14 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from lsfb_live.recognition.dataset import load_enriched_split_dataset, load_split_dataset
+from lsfb_live.recognition.dataset import (
+    load_enriched_split_dataset,
+    load_phonological_split_dataset,
+    load_split_dataset,
+)
 from lsfb_live.recognition.models import (
     BiGRUClassifier,
+    BiStreamMSSTClassifier,
     ConvTransformerClassifier,
     ModelArchitectureConfig,
     MSSTClassifier,
@@ -23,14 +28,14 @@ def parse_cli_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--model-path",
         type=Path,
-        default=Path("models/msst_best.pt"),
+        default=Path("models/bistream_best.pt"),
         help="Chemin du modèle entraîné (.pt)",
     )
     parser.add_argument(
         "--model-type",
-        choices=["bigru", "transformer", "msst"],
-        default="msst",
-        help="Architecture du réseau (défaut : msst)",
+        choices=["bigru", "transformer", "msst", "bistream"],
+        default="bistream",
+        help="Architecture du réseau (défaut : bistream)",
     )
     parser.add_argument(
         "--use-velocity",
@@ -111,18 +116,34 @@ def main() -> int:
         mapping = json.load(f)
         class_to_sign = mapping["class_to_sign"]
 
-    dataset_loader = load_enriched_split_dataset if args.use_velocity else load_split_dataset
+    is_bistream = args.model_type == "bistream"
+    if is_bistream:
+        dataset_loader = load_phonological_split_dataset
+        feature_dimension = 416
+        hidden_dim = 192
+    else:
+        dataset_loader = load_enriched_split_dataset if args.use_velocity else load_split_dataset
+        feature_dimension = 390 if args.use_velocity else 195
+        hidden_dim = 128
+
     test_dataset = dataset_loader(args.data_dir, "test", augment=False)
     dataloader = DataLoader(test_dataset, batch_size=128, shuffle=False)
 
-    feature_dimension = 390 if args.use_velocity else 195
-    config = ModelArchitectureConfig(input_dim=feature_dimension, num_classes=len(class_to_sign))
+    config = ModelArchitectureConfig(
+        input_dim=feature_dimension,
+        hidden_dim=hidden_dim,
+        num_classes=len(class_to_sign),
+    )
     if args.model_type == "bigru":
         model = BiGRUClassifier(config)
     elif args.model_type == "transformer":
         model = ConvTransformerClassifier(config)
-    else:
+    elif args.model_type == "msst":
         model = MSSTClassifier(config)
+    elif args.model_type == "bistream":
+        model = BiStreamMSSTClassifier(config)
+    else:
+        raise ValueError(f"Type de modèle non supporté : {args.model_type}")
 
     model.load_state_dict(torch.load(args.model_path, map_location="cpu", weights_only=True))
 

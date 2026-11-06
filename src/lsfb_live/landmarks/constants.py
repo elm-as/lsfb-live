@@ -12,6 +12,7 @@ TOTAL_LANDMARKS = UPPER_POSE_LANDMARK_COUNT + (2 * HAND_LANDMARK_COUNT)  # 65 po
 COORDINATE_DIM = 3  # (x, y, z)
 FEATURE_DIM = TOTAL_LANDMARKS * COORDINATE_DIM  # 195 features de position par frame
 ENRICHED_FEATURE_DIM = FEATURE_DIM * 2  # 390 features (195 positions + 195 vitesses)
+BISTREAM_FEATURE_DIM = 416  # 416 features (138 corps + 252 mains + 26 phonologiques)
 
 TARGET_SEQUENCE_LENGTH = 40  # Frames par séquence standardisée
 EPSILON_DISTANCE = 1e-6

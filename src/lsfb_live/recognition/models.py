@@ -172,3 +172,104 @@ class MSSTClassifier(nn.Module):
         return self.classifier(pooled)
 
 
+class BiStreamMSSTClassifier(nn.Module):
+    """Classifieur à double flux découplant le corps (macro) et les mains (micro)."""
+
+    def __init__(self, config: ModelArchitectureConfig):
+        super().__init__()
+        # Partitionnement des 416 entrées (138 corps, 252 mains, 26 phonologie)
+        self.body_dim = 138
+        self.hands_dim = 252
+        self.phono_dim = 26
+
+        hidden_dim = config.hidden_dim
+        half_dim = hidden_dim // 2
+
+        # 1. Flux Corps & Emplacement (macro-trajectoire)
+        self.body_conv = nn.Sequential(
+            nn.Conv1d(self.body_dim, half_dim, kernel_size=3, padding=1),
+            nn.BatchNorm1d(half_dim),
+            nn.GELU(),
+            nn.Dropout(config.dropout_rate),
+        )
+
+        # 2. Flux Mains & Formes des doigts (micro-configurations)
+        hand_branch = half_dim // 3
+        total_hand = hand_branch * 3
+        self.hand_k3 = nn.Conv1d(self.hands_dim, hand_branch, kernel_size=3, padding=1)
+        self.hand_k5 = nn.Conv1d(self.hands_dim, hand_branch, kernel_size=5, padding=2)
+        self.hand_k7 = nn.Conv1d(self.hands_dim, hand_branch, kernel_size=7, padding=3)
+        self.hand_norm = nn.BatchNorm1d(total_hand)
+        self.hand_act = nn.GELU()
+        self.hand_drop = nn.Dropout(config.dropout_rate)
+
+        # 3. Projection du flux phonologique explicite
+        phono_proj_dim = 32
+        self.phono_proj = nn.Sequential(
+            nn.Linear(self.phono_dim, phono_proj_dim),
+            nn.LayerNorm(phono_proj_dim),
+            nn.GELU(),
+        )
+
+        # 4. Fusion des flux
+        fusion_dim = half_dim + total_hand + phono_proj_dim
+        self.fusion = nn.Sequential(
+            nn.Linear(fusion_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
+            nn.Dropout(config.dropout_rate),
+        )
+
+        # 5. Plongement positionnel et Transformer temporel
+        self.pos_embedding = nn.Parameter(torch.randn(1, 40, hidden_dim) * 0.02)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_dim,
+            nhead=4,
+            dim_feedforward=hidden_dim * 2,
+            dropout=config.dropout_rate,
+            activation="gelu",
+            batch_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=config.num_layers)
+
+        # 6. Attention Pooling temporel
+        self.attention_pool = nn.Sequential(
+            nn.Linear(hidden_dim, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1),
+        )
+
+        # 7. Classification finale
+        self.classifier = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Dropout(config.dropout_rate),
+            nn.Linear(hidden_dim, config.num_classes),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Découpage des canaux
+        x_body = x[:, :, :self.body_dim].transpose(1, 2)
+        x_hands = x[:, :, self.body_dim : self.body_dim + self.hands_dim].transpose(1, 2)
+        x_phono = x[:, :, self.body_dim + self.hands_dim :]
+
+        # Encodage parallèle des sous-flux
+        feat_body = self.body_conv(x_body).transpose(1, 2)
+        hand_multi = torch.cat([self.hand_k3(x_hands), self.hand_k5(x_hands), self.hand_k7(x_hands)], dim=1)
+        feat_hands = self.hand_drop(self.hand_act(self.hand_norm(hand_multi))).transpose(1, 2)
+        feat_phono = self.phono_proj(x_phono)
+
+        # Fusion multimodale
+        concatenated = torch.cat([feat_body, feat_hands, feat_phono], dim=-1)
+        fused = self.fusion(concatenated)
+
+        # Encodage Transformer avec plongement positionnel
+        seq_len = fused.size(1)
+        encoded = fused + self.pos_embedding[:, :seq_len, :]
+        transformed = self.transformer(encoded)
+
+        # Attention pooling et sortie de classe
+        weights = torch.softmax(self.attention_pool(transformed), dim=1)
+        pooled = torch.sum(transformed * weights, dim=1)
+        return self.classifier(pooled)
+
+

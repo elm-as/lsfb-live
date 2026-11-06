@@ -13,11 +13,13 @@ import torch.nn.functional as F
 from lsfb_live.capture.holistic_extractor import FrameLandmarks
 from lsfb_live.landmarks import (
     TARGET_SEQUENCE_LENGTH,
+    assemble_bistream_features,
     transform_enriched_landmarks_pipeline,
     transform_landmarks_pipeline,
 )
 from lsfb_live.recognition.models import (
     BiGRUClassifier,
+    BiStreamMSSTClassifier,
     ConvTransformerClassifier,
     ModelArchitectureConfig,
     MSSTClassifier,
@@ -56,7 +58,7 @@ class LiveInferenceEngine:
         self,
         model_path: Path,
         mapping_path: Path,
-        model_type: str = "bigru",
+        model_type: str = "bistream",
         window_size: int = 40,
         confidence_threshold: float = 0.45,
     ):
@@ -65,16 +67,21 @@ class LiveInferenceEngine:
             self._class_to_sign = mapping_data["class_to_sign"]
 
         num_classes = len(self._class_to_sign)
+        self._model_type = model_type
         self._use_velocity = model_type == "msst"
-        input_dim = 390 if self._use_velocity else 195
-        config = ModelArchitectureConfig(input_dim=input_dim, num_classes=num_classes)
 
-        if model_type == "bigru":
-            self._model = BiGRUClassifier(config)
-        elif model_type == "transformer":
-            self._model = ConvTransformerClassifier(config)
+        if model_type == "bistream":
+            config = ModelArchitectureConfig(input_dim=416, hidden_dim=192, num_classes=num_classes)
+            self._model = BiStreamMSSTClassifier(config)
         elif model_type == "msst":
+            config = ModelArchitectureConfig(input_dim=390, num_classes=num_classes)
             self._model = MSSTClassifier(config)
+        elif model_type == "transformer":
+            config = ModelArchitectureConfig(input_dim=195, num_classes=num_classes)
+            self._model = ConvTransformerClassifier(config)
+        elif model_type == "bigru":
+            config = ModelArchitectureConfig(input_dim=195, num_classes=num_classes)
+            self._model = BiGRUClassifier(config)
         else:
             raise ValueError(f"Type de modèle inconnu : {model_type}")
 
@@ -130,7 +137,10 @@ class LiveInferenceEngine:
             return SignPrediction(sign="En attente d'un geste...", confidence=0.0, top5=[], is_active_sign=False)
 
         # Utilisation stricte de la chaîne de normalisation partagée train/live
-        if self._use_velocity:
+        if self._model_type == "bistream":
+            positions = transform_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
+            features = assemble_bistream_features(positions)
+        elif self._use_velocity:
             features = transform_enriched_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
         else:
             features = transform_landmarks_pipeline(pose_seq, lh_seq, rh_seq)

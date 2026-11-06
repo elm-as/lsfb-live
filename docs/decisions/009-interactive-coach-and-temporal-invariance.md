@@ -61,3 +61,4 @@ J'ai refondu le moteur glissant ([`src/lsfb_live/recognition/live_engine.py`](..
 
 - **Tests unitaires** : La suite passe à 22 tests validés en 4,7 secondes (`pytest tests/`), incluant la validation des bornes cinématiques et de l'intégrité du rendu vectoriel.
 - **Résultat utilisateur** : L'interface scindée fournit une démonstration immédiate, symétrique et sans ambiguïté motrice, levant le sentiment de confusion face aux vidéos de studio brutes.
+
