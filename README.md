@@ -5,8 +5,9 @@
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.15%20(CPU)-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-1.2.2-0072B2?style=for-the-badge&logo=google&logoColor=white)](https://developers.google.com/mediapipe)
-[![Top-1 Accuracy](https://img.shields.io/badge/Test%20Top--1-54.46%25-brightgreen?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Top-5 Accuracy](https://img.shields.io/badge/Test%20Top--5-83.23%25-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Vocabulary](https://img.shields.io/badge/Vocabulary-250%20Signs%20(v1.2)-darkblue?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Top-1 Accuracy](https://img.shields.io/badge/Top--1%20(250%20Signs)-39.68%25-brightgreen?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Top-5 Accuracy](https://img.shields.io/badge/Top--5%20(250%20Signs)-70.67%25-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 [![Signer-Independent](https://img.shields.io/badge/Evaluation-40%20Unseen%20Signers-blueviolet?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 
 *Un pipeline complet de Data Science : du corpus de poses de l'Université de Namur jusqu'à la classification temps réel face webcam sur un processeur standard d'ordinateur portable, sans carte graphique dédiée.*
@@ -34,16 +35,17 @@ Le dataset utilisé est issu des travaux de recherche de l'**Université de Namu
 L'analyse exploratoire complète menée sur le corpus est consignée dans [`docs/exploration_report.md`](docs/exploration_report.md).
 
 ```
-   120 739 instances (LSFB ISOL global)
+   120 739 instances (LSFB ISOL global, 4 657 classes)
                │
-               ▼  Sélection du Top-100 signes les plus fréquents (46,0% du corpus)
-    55 599 instances ciblées
+               ├──► Top-100 signes (55 286 instances validées, v1.0 & v1.1)
+               │      ├── Train : 21 401 instances (39 signeurs)
+               │      ├── Val   :  9 136 instances (20 signeurs)
+               │      └── Test  : 24 749 instances (40 signeurs non vus)
                │
-               ▼  Élimination des 313 séquences vides (0 frame)
-    55 286 instances exploitables
-       ├── Train (Folds 2 & 3) : 21 401 instances (39 signeurs)
-       ├── Val   (Fold 4)       :  9 136 instances (20 signeurs)
-       └── Test  (Folds 0 & 1)  : 24 749 instances (40 signeurs non vus)
+               └──► Top-250 signes (75 825 instances validées, v1.2)
+                      ├── Train : 29 324 instances (39 signeurs)
+                      ├── Val   : 12 748 instances (20 signeurs)
+                      └── Test  : 33 753 instances (40 signeurs non vus)
 ```
 
 ### Le déséquilibre de classes (15.2:1)
@@ -117,6 +119,8 @@ Afin de mesurer la capacité réelle de généralisation, le protocole respecte 
 
 Trois étapes d'optimisation séquentielle sur CPU ont été comparées :
 
+### Évolution des Modèles sur le Top-100 (v1.0 & v1.1)
+
 | Version | Modèle | Caractéristiques | Top-1 Accuracy | Top-5 Accuracy | Balanced Accuracy | Test Loss |
 |---|---|---|---|---|---|---|
 | **v1.0** | Baseline BiGRU | 195 (Positions) | 44,80% | 75,76% | 44,66% | 2,1811 |
@@ -125,28 +129,40 @@ Trois étapes d'optimisation séquentielle sur CPU ont été comparées :
 
 *(Le niveau du hasard sur 100 classes est de 1,0%).*
 
-### Apports de la v1.1 (MSST-Transformer) :
+### Montée en Charge sur le Top-250 (v1.2)
+
+Le passage de 100 à 250 classes multiplie la combinatoire par 2,5 et densifie fortement l'espace des homonymes gestuels. Évalué sur **33 753 séquences de test** issues de 40 signeurs non vus :
+
+| Échelle | Modèle | Classes | Test Top-1 | Test Top-5 | Balanced Accuracy | Test Loss |
+|---|---|---|---|---|---|---|
+| *Hasard* | *Aléatoire uniforme* | *250* | *0,40%* | *2,00%* | *0,40%* | *5,5215* |
+| **v1.1** | MSST-Transformer | 100 | 54,46% | 83,23% | 54,23% | 1,7647 |
+| **v1.2** | **MSST-Transformer** | **250** | **39,68%** | **70,67%** | **41,64%** | **2,5521** |
+
+> **Constat majeur :** Malgré l'explosion du nombre de classes, le modèle maintient **plus de 70% en Top-5** et une **Balanced Accuracy supérieure au Top-1 brut (41,64% vs 39,68%)**. La pondération inverse de fréquence protège efficacement les classes rares contre l'écrasement par les classes dominantes.
+
+### Apports méthodologiques clés (MSST-Transformer) :
 1. **Vitesses articulaires instantanées ($\Delta P$) :** La dérivation temporelle discrète double l'information cinématique (390 features/frame), levant les ambiguïtés sur la dynamique des trajectoires.
 2. **Invariance miroir droitier / gaucher :** Permutation symétrique des membres et inversion $x \leftarrow -x$ à $p=0.5$, doublant la représentativité des gestes asymétriques.
 3. **Multi-Scale Convolutions ($k=3, 5, 7$) :** Capture simultanée des micro-mouvements des doigts et des mouvements amples des bras.
 4. **Attention Pooling apprenable :** Pondère les trames discriminantes du geste plutôt que de noyer l'information dans une moyenne uniforme.
 
-### Analyse qualitative par signe (v1.1)
+### Analyse qualitative par signe (Top-250, v1.2)
 
 ```
-Signes les mieux reconnus (> 80%) :
-  1. INTERPRETE     [======================================= ] 93.5%  (123 exemples)
-  2. COMMUNICATION  [======================================  ] 87.6%  (89 exemples)
-  3. RENCONTRER     [======================================  ] 87.2%  (117 exemples)
-  4. ECOLE          [===================================     ] 83.5%  (158 exemples)
-  5. DIFFERENT      [===================================     ] 82.9%  (322 exemples)
+Signes les mieux reconnus (> 85%) :
+  1. ADORER         [======================================  ] 92.8%  (69 exemples)
+  2. CORPS          [=====================================   ] 90.2%  (41 exemples)
+  3. INTERPRETE     [====================================    ] 88.6%  (123 exemples)
+  4. RENCONTRER     [====================================    ] 88.0%  (117 exemples)
+  5. CONVENIR       [===================================     ] 87.5%  (56 exemples)
 
-Signes les plus délicats (< 20%) :
-  1. FINIR          [=====                                   ] 13.1%  (283 exemples)
-  2. ALLER          [======                                  ] 13.2%  (182 exemples)
-  3. APPELER        [======                                  ] 15.2%  (223 exemples)
-  4. DIRE           [=======                                 ] 18.6%  (512 exemples)
-  5. JUSQUE         [========                                ] 19.7%  (76 exemples)
+Signes les plus délicats (< 5%) :
+  1. FSIGN (Dactylologie) [=                                 ]  0.9%  (108 exemples)
+  2. ALLER                [=                                 ]  2.7%  (182 exemples)
+  3. AUTREFOIS            [=                                 ]  3.3%  (61 exemples)
+  4. SAVOIR-NEG           [==                                ]  3.7%  (54 exemples)
+  5. VOULOIR              [==                                ]  4.7%  (64 exemples)
 ```
 
 ---
@@ -174,7 +190,7 @@ pytest -v
 
 ## 6. Guide de Démarrage Rapide
 
-Les poids du modèle retenu v1.1 (`models/msst_best.pt`) ainsi que le dictionnaire des 100 classes sont directement inclus dans le dépôt.
+Les poids du modèle retenu v1.2 (`models/msst_best.pt`, 2,68 Mo) entraîné sur le **Top-250** ainsi que le dictionnaire des 250 classes (`models/class_mapping.json`) sont directement inclus dans le dépôt (les poids v1.1 sur 100 classes restent disponibles dans `models/msst_top100.pt`).
 
 ### 1. Installation
 ```powershell
@@ -215,8 +231,8 @@ python scripts/evaluate.py --model-path models/msst_best.pt --model-type msst --
 
 - **v1.0 (Validé) :** Pipeline de base Top-100 (195 features, ConvTransformer à 51,8% Top-1 / 82,1% Top-5).
 - **v1.1 (Validé) :** Enrichissement cinématique (390 features positions + vitesses, symétrie miroir, MSST-Transformer à **54,5% Top-1 / 83,2% Top-5 / 54,2% Balanced**).
-- **v1.2 (En cours) :** Extension du corpus à une plus grande base (**Top-250** ou **Top-500** classes).
-- **v2.0 (Linguistique continue) :** Reconnaissance continue sur flux non segmenté (LSFB-CONT) couplée à un modèle de langue (LLM) pour la traduction en phrases complètes.
+- **v1.2 (Validé) :** Montée en charge sur le **Top-250** des signes LSFB (75 825 instances réelles, 33 753 séquences de test sur 40 signeurs non vus, **70,7% Top-5** et **41,6% Balanced Acc**).
+- **v2.0 (Prochaine étape) :** Reconnaissance continue sur flux non segmenté (LSFB-CONT) couplée à un modèle de langue (LLM) pour la traduction en phrases complètes.
 - **v3.0 (Génération inverse) :** Text-to-Sign : synthèse de coordonnées 3D de squelettes pour animer un avatar gestuel.
 
 ---

@@ -1,8 +1,10 @@
 """Point d'entrée CLI pour entraîner les modèles de reconnaissance LSFB."""
 
-from pathlib import Path
 import argparse
+import json
+import shutil
 import sys
+from pathlib import Path
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -54,6 +56,12 @@ def parse_cli_arguments() -> argparse.Namespace:
         default=None,
         help="Chemin de sauvegarde des poids optimaux (.pt)",
     )
+    parser.add_argument(
+        "--num-classes",
+        type=int,
+        default=None,
+        help="Nombre de classes cibles (déduit automatiquement si omis)",
+    )
     parser.add_argument("--epochs", type=int, default=15, help="Nombre maximal d'époques (défaut : 15)")
     parser.add_argument("--batch-size", type=int, default=64, help="Taille des batchs (défaut : 64)")
     parser.add_argument("--lr", type=float, default=1e-3, help="Taux d'apprentissage (défaut : 1e-3)")
@@ -92,7 +100,20 @@ def main() -> int:
     class_weights = np.load(class_weights_path) if class_weights_path.is_file() else None
 
     feature_dimension = 390 if args.use_velocity else 195
-    arch_config = ModelArchitectureConfig(input_dim=feature_dimension, num_classes=100)
+    mapping_path = data_dir / "class_mapping.json"
+    if args.num_classes is not None:
+        target_num_classes = args.num_classes
+    elif mapping_path.is_file():
+        with open(mapping_path, "r", encoding="utf-8") as f:
+            mapping_dict = json.load(f)
+            target_num_classes = len(mapping_dict.get("class_to_sign", []))
+    elif class_weights is not None:
+        target_num_classes = len(class_weights)
+    else:
+        target_num_classes = 100
+
+    print(f"Nombre de classes actives : {target_num_classes}")
+    arch_config = ModelArchitectureConfig(input_dim=feature_dimension, num_classes=target_num_classes)
     model = build_model_instance(args.model, arch_config)
     hparams = TrainingHyperparameters(
         epochs=args.epochs,
@@ -107,6 +128,12 @@ def main() -> int:
         class_weights=class_weights,
         checkpoint_path=checkpoint_path,
     )
+
+    if mapping_path.is_file():
+        dest_mapping = checkpoint_path.parent / "class_mapping.json"
+        if dest_mapping != mapping_path:
+            shutil.copyfile(mapping_path, dest_mapping)
+            print(f"Mappage des classes copié vers : {dest_mapping.resolve()}")
 
     print(f"\nMeilleur score validation (Balanced Acc) : {result['best_val_score'] * 100:.2f}%")
     print(f"Poids sauvegardés dans : {checkpoint_path.resolve()}")

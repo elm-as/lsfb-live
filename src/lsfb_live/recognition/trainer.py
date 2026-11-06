@@ -69,7 +69,7 @@ def evaluate_dataset(
     model: nn.Module,
     dataloader: DataLoader,
     criterion: nn.Module,
-    num_classes: int = 100,
+    num_classes: Optional[int] = None,
 ) -> EvaluationMetrics:
     """Évalue le modèle sur un jeu de données complet et compile les métriques."""
     model.eval()
@@ -92,7 +92,8 @@ def evaluate_dataset(
 
     predictions = torch.argmax(stacked_logits, dim=1).numpy()
     targets_np = stacked_targets.numpy()
-    balanced_acc = compute_balanced_accuracy(predictions, targets_np, num_classes)
+    total_classes = num_classes if num_classes is not None else stacked_logits.shape[1]
+    balanced_acc = compute_balanced_accuracy(predictions, targets_np, total_classes)
 
     return EvaluationMetrics(
         loss=avg_loss,
