@@ -25,6 +25,7 @@ class TrainingHyperparameters:
         batch_size: Taille des mini-lots (64).
         learning_rate: Taux d'apprentissage initial (1e-3).
         weight_decay: Régularisation L2 (1e-4).
+        label_smoothing: Lissage d'étiquette pour limiter la sur-confiance (0.05).
         patience: Époques sans amélioration avant arrêt anticipé (6).
         device: Dispositif d'exécution ('cpu').
     """
@@ -33,6 +34,7 @@ class TrainingHyperparameters:
     batch_size: int = 64
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
+    label_smoothing: float = 0.05
     patience: int = 6
     device: str = "cpu"
 
@@ -116,7 +118,7 @@ def train_and_select_best_model(
     model.to(device)
 
     weights_tensor = torch.from_numpy(class_weights).float().to(device) if class_weights is not None else None
-    criterion = nn.CrossEntropyLoss(weight=weights_tensor)
+    criterion = nn.CrossEntropyLoss(weight=weights_tensor, label_smoothing=hparams.label_smoothing)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=hparams.learning_rate,

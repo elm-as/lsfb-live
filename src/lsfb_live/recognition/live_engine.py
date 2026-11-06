@@ -10,11 +10,16 @@ import torch
 import torch.nn.functional as F
 
 from lsfb_live.capture.holistic_extractor import FrameLandmarks
-from lsfb_live.landmarks import TARGET_SEQUENCE_LENGTH, transform_landmarks_pipeline
+from lsfb_live.landmarks import (
+    TARGET_SEQUENCE_LENGTH,
+    transform_enriched_landmarks_pipeline,
+    transform_landmarks_pipeline,
+)
 from lsfb_live.recognition.models import (
     BiGRUClassifier,
     ConvTransformerClassifier,
     ModelArchitectureConfig,
+    MSSTClassifier,
 )
 
 
@@ -59,12 +64,16 @@ class LiveInferenceEngine:
             self._class_to_sign = mapping_data["class_to_sign"]
 
         num_classes = len(self._class_to_sign)
-        config = ModelArchitectureConfig(num_classes=num_classes)
+        self._use_velocity = model_type == "msst"
+        input_dim = 390 if self._use_velocity else 195
+        config = ModelArchitectureConfig(input_dim=input_dim, num_classes=num_classes)
 
         if model_type == "bigru":
             self._model = BiGRUClassifier(config)
         elif model_type == "transformer":
             self._model = ConvTransformerClassifier(config)
+        elif model_type == "msst":
+            self._model = MSSTClassifier(config)
         else:
             raise ValueError(f"Type de modèle inconnu : {model_type}")
 
@@ -110,8 +119,12 @@ class LiveInferenceEngine:
         rh_seq = np.array(self._rh_history)
 
         # Utilisation stricte de la chaîne de normalisation partagée train/live
-        features = transform_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
-        tensor_x = torch.from_numpy(features).unsqueeze(0).float()  # (1, 40, 195)
+        if self._use_velocity:
+            features = transform_enriched_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
+        else:
+            features = transform_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
+
+        tensor_x = torch.from_numpy(features).unsqueeze(0).float()  # (1, 40, input_dim)
 
         with torch.no_grad():
             logits = self._model(tensor_x)

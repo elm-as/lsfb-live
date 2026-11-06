@@ -130,3 +130,42 @@ def transform_landmarks_pipeline(
 
     return temporally_resampled.reshape(TARGET_SEQUENCE_LENGTH, FEATURE_DIM).astype(np.float32)
 
+
+def compute_instantaneous_velocities(positions: np.ndarray) -> np.ndarray:
+    """Calcule la dérivée temporelle discrète (vitesses) sur une séquence de positions.
+
+    Args:
+        positions: Tableau de forme (T, D).
+
+    Returns:
+        Tableau des vitesses de même forme (T, D).
+    """
+    if len(positions) <= 1:
+        return np.zeros_like(positions)
+
+    velocities = np.empty_like(positions)
+    velocities[0] = 0.0
+    velocities[1:] = positions[1:] - positions[:-1]
+    return velocities.astype(np.float32)
+
+
+def transform_enriched_landmarks_pipeline(
+    pose: np.ndarray,
+    left_hand: np.ndarray,
+    right_hand: np.ndarray,
+) -> np.ndarray:
+    """Transforme les repères bruts en tenseur enrichi de positions et vitesses (40, 390).
+
+    Args:
+        pose: Repères bruts du corps.
+        left_hand: Repères bruts de la main gauche.
+        right_hand: Repères bruts de la main droite.
+
+    Returns:
+        Tableau float32 de forme (TARGET_SEQUENCE_LENGTH, ENRICHED_FEATURE_DIM).
+    """
+    positions = transform_landmarks_pipeline(pose, left_hand, right_hand)
+    velocities = compute_instantaneous_velocities(positions)
+    return np.concatenate([positions, velocities], axis=-1).astype(np.float32)
+
+

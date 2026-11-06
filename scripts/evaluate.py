@@ -8,11 +8,12 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from lsfb_live.recognition.dataset import load_split_dataset
+from lsfb_live.recognition.dataset import load_enriched_split_dataset, load_split_dataset
 from lsfb_live.recognition.models import (
     BiGRUClassifier,
     ConvTransformerClassifier,
     ModelArchitectureConfig,
+    MSSTClassifier,
 )
 
 
@@ -22,14 +23,26 @@ def parse_cli_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--model-path",
         type=Path,
-        default=Path("models/bigru_best.pt"),
+        default=Path("models/msst_best.pt"),
         help="Chemin du modèle entraîné (.pt)",
     )
     parser.add_argument(
         "--model-type",
-        choices=["bigru", "transformer"],
-        default="bigru",
-        help="Architecture du réseau (défaut : bigru)",
+        choices=["bigru", "transformer", "msst"],
+        default="msst",
+        help="Architecture du réseau (défaut : msst)",
+    )
+    parser.add_argument(
+        "--use-velocity",
+        action="store_true",
+        default=True,
+        help="Utilise les vitesses instantanées (390 features, défaut: True)",
+    )
+    parser.add_argument(
+        "--no-velocity",
+        action="store_false",
+        dest="use_velocity",
+        help="Désactive les vitesses (195 features)",
     )
     parser.add_argument(
         "--data-dir",
@@ -98,11 +111,19 @@ def main() -> int:
         mapping = json.load(f)
         class_to_sign = mapping["class_to_sign"]
 
-    test_dataset = load_split_dataset(args.data_dir, "test", augment=False)
+    dataset_loader = load_enriched_split_dataset if args.use_velocity else load_split_dataset
+    test_dataset = dataset_loader(args.data_dir, "test", augment=False)
     dataloader = DataLoader(test_dataset, batch_size=128, shuffle=False)
 
-    config = ModelArchitectureConfig(num_classes=len(class_to_sign))
-    model = BiGRUClassifier(config) if args.model_type == "bigru" else ConvTransformerClassifier(config)
+    feature_dimension = 390 if args.use_velocity else 195
+    config = ModelArchitectureConfig(input_dim=feature_dimension, num_classes=len(class_to_sign))
+    if args.model_type == "bigru":
+        model = BiGRUClassifier(config)
+    elif args.model_type == "transformer":
+        model = ConvTransformerClassifier(config)
+    else:
+        model = MSSTClassifier(config)
+
     model.load_state_dict(torch.load(args.model_path, map_location="cpu", weights_only=True))
 
     print(f"=== Évaluation de {args.model_path.name} sur {len(test_dataset)} exemples test ===")

@@ -3,6 +3,7 @@
 import numpy as np
 
 from lsfb_live.landmarks.constants import (
+    ENRICHED_FEATURE_DIM,
     FEATURE_DIM,
     LEFT_SHOULDER_INDEX,
     RIGHT_SHOULDER_INDEX,
@@ -10,9 +11,11 @@ from lsfb_live.landmarks.constants import (
     TOTAL_LANDMARKS,
 )
 from lsfb_live.landmarks.normalizer import (
+    compute_instantaneous_velocities,
     normalize_spatial_coordinates,
     pack_raw_landmarks,
     resample_temporal_sequence,
+    transform_enriched_landmarks_pipeline,
     transform_landmarks_pipeline,
 )
 
@@ -77,4 +80,35 @@ def test_transform_landmarks_pipeline_outputs_correct_tensor():
     assert features.shape == (TARGET_SEQUENCE_LENGTH, FEATURE_DIM)
     assert features.dtype == np.float32
     assert not np.isnan(features).any()
+
+
+def test_compute_instantaneous_velocities_calculates_difference():
+    """Vérifie le calcul différentiel de la vitesse le long de l'axe temporel."""
+    positions = np.array([
+        [0.0, 1.0],
+        [2.0, 3.0],
+        [5.0, 2.0],
+    ], dtype=np.float32)
+
+    velocities = compute_instantaneous_velocities(positions)
+
+    assert velocities.shape == positions.shape
+    assert np.allclose(velocities[0], [0.0, 0.0])
+    assert np.allclose(velocities[1], [2.0, 2.0])
+    assert np.allclose(velocities[2], [3.0, -1.0])
+
+
+def test_transform_enriched_landmarks_pipeline_outputs_390_features():
+    """Vérifie que le pipeline enrichi génère bien 390 features (195 pos + 195 vit)."""
+    frames = 10
+    pose = np.random.randn(frames, 33, 3).astype(np.float32)
+    lh = np.random.randn(frames, 21, 3).astype(np.float32)
+    rh = np.random.randn(frames, 21, 3).astype(np.float32)
+
+    enriched = transform_enriched_landmarks_pipeline(pose, lh, rh)
+
+    assert enriched.shape == (TARGET_SEQUENCE_LENGTH, ENRICHED_FEATURE_DIM)
+    assert enriched.dtype == np.float32
+    assert not np.isnan(enriched).any()
+
 

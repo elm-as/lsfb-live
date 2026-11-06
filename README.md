@@ -5,8 +5,8 @@
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.15%20(CPU)-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-1.2.2-0072B2?style=for-the-badge&logo=google&logoColor=white)](https://developers.google.com/mediapipe)
-[![Top-1 Accuracy](https://img.shields.io/badge/Test%20Top--1-51.78%25-brightgreen?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Top-5 Accuracy](https://img.shields.io/badge/Test%20Top--5-82.08%25-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Top-1 Accuracy](https://img.shields.io/badge/Test%20Top--1-54.46%25-brightgreen?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Top-5 Accuracy](https://img.shields.io/badge/Test%20Top--5-83.23%25-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 [![Signer-Independent](https://img.shields.io/badge/Evaluation-40%20Unseen%20Signers-blueviolet?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 
 *Un pipeline complet de Data Science : du corpus de poses de l'Université de Namur jusqu'à la classification temps réel face webcam sur un processeur standard d'ordinateur portable, sans carte graphique dédiée.*
@@ -115,41 +115,39 @@ flowchart LR
 
 Afin de mesurer la capacité réelle de généralisation, le protocole respecte une séparation stricte : **les 40 signeurs du split de test n'ont jamais été vus pendant l'entraînement.**
 
-Deux architectures séquentielles adaptées à l'inférence temps réel sur CPU ont été comparées :
+Trois étapes d'optimisation séquentielle sur CPU ont été comparées :
 
-| Métrique | Baseline BiGRU | **ConvTransformer (Retenu)** | Écart |
-|---|---|---|---|
-| **Test Top-1 Accuracy** | 44,80% | **51,78%** | **+6,98%** |
-| **Test Top-5 Accuracy** | 75,76% | **82,08%** | **+6,32%** |
-| **Balanced Accuracy** | 44,66% | **50,72%** | **+6,06%** |
-| **Test CrossEntropy Loss** | 2,1811 | **1,9043** | **-0,28** |
-| **Nombre de paramètres** | 320 000 | 480 000 | — |
-| **Inférence CPU par fenêtre** | ~1,2 ms | ~1,8 ms | Temps réel fluide |
+| Version | Modèle | Caractéristiques | Top-1 Accuracy | Top-5 Accuracy | Balanced Accuracy | Test Loss |
+|---|---|---|---|---|---|---|
+| **v1.0** | Baseline BiGRU | 195 (Positions) | 44,80% | 75,76% | 44,66% | 2,1811 |
+| **v1.0** | ConvTransformer | 195 (Positions) | 51,78% | 82,08% | 50,72% | 1,9043 |
+| **v1.1** | **MSST-Transformer** | **390 (Pos + Vitesses $\Delta P$)** | **54,46%** | **83,23%** | **54,23%** | **1,7647** |
 
 *(Le niveau du hasard sur 100 classes est de 1,0%).*
 
-> **Bilan :** Face à des signeurs inconnus, le ConvTransformer classe le signe exact en tête dans **plus d'un cas sur deux (51,8%)**, et le bon signe figure dans les 5 premiers candidats suggérés dans **82,1% des cas**.
+### Apports de la v1.1 (MSST-Transformer) :
+1. **Vitesses articulaires instantanées ($\Delta P$) :** La dérivation temporelle discrète double l'information cinématique (390 features/frame), levant les ambiguïtés sur la dynamique des trajectoires.
+2. **Invariance miroir droitier / gaucher :** Permutation symétrique des membres et inversion $x \leftarrow -x$ à $p=0.5$, doublant la représentativité des gestes asymétriques.
+3. **Multi-Scale Convolutions ($k=3, 5, 7$) :** Capture simultanée des micro-mouvements des doigts et des mouvements amples des bras.
+4. **Attention Pooling apprenable :** Pondère les trames discriminantes du geste plutôt que de noyer l'information dans une moyenne uniforme.
 
-### Analyse qualitative par signe
+### Analyse qualitative par signe (v1.1)
 
 ```
-Signes les mieux reconnus (> 85%) :
-  1. COMMUNICATION  [========================================] 92.1%  (89 exemples)
-  2. INTERPRETE     [======================================= ] 90.2%  (123 exemples)
-  3. RENCONTRER     [======================================  ] 88.9%  (117 exemples)
-  4. C-EST          [=====================================   ] 86.2%  (398 exemples)
-  5. DIFFERENT      [===================================     ] 80.4%  (322 exemples)
+Signes les mieux reconnus (> 80%) :
+  1. INTERPRETE     [======================================= ] 93.5%  (123 exemples)
+  2. COMMUNICATION  [======================================  ] 87.6%  (89 exemples)
+  3. RENCONTRER     [======================================  ] 87.2%  (117 exemples)
+  4. ECOLE          [===================================     ] 83.5%  (158 exemples)
+  5. DIFFERENT      [===================================     ] 82.9%  (322 exemples)
 
-Signes les plus ambigus (< 20%) :
-  1. APPELER        [======                                  ] 13.9%  (223 exemples)
-  2. DIRE           [======                                  ] 14.8%  (512 exemples)
-  3. PETIT          [=======                                 ] 16.5%  (133 exemples)
-  4. ALLER          [=======                                 ] 17.0%  (182 exemples)
-  5. FINIR          [========                                ] 18.0%  (283 exemples)
+Signes les plus délicats (< 20%) :
+  1. FINIR          [=====                                   ] 13.1%  (283 exemples)
+  2. ALLER          [======                                  ] 13.2%  (182 exemples)
+  3. APPELER        [======                                  ] 15.2%  (223 exemples)
+  4. DIRE           [=======                                 ] 18.6%  (512 exemples)
+  5. JUSQUE         [========                                ] 19.7%  (76 exemples)
 ```
-
-- **Forces :** Les signes bimanités avec une grande amplitude spatiale (`COMMUNICATION`, `INTERPRETE`, `RENCONTRER`) atteignent des taux de reconnaissance très élevés.
-- **Difficultés :** Les signes très courts à une seule main (`DIRE`, `APPELER`, `PETIT`), basés sur des variations fines des doigts proches du visage, restent plus délicats à séparer sans contexte phrastique.
 
 ---
 
@@ -160,23 +158,23 @@ Le projet applique les principes d'architecture logicielle par domaine de la cha
 ```
 src/lsfb_live/
 ├── dataset/         Téléchargement résilient, indexation et compilation des tenseurs
-├── landmarks/       Constantes MediaPipe et pipeline de normalisation invariante
-├── recognition/     Modèles (BiGRU & Transformer), entraînement pondéré, moteur live
+├── landmarks/       Constantes MediaPipe et pipeline de normalisation invariante (+ vitesses)
+├── recognition/     Modèles (BiGRU, ConvTransformer, MSST), entraînement pondéré, moteur live
 ├── capture/         Gestion du flux webcam et extracteur MediaPipe Tasks Holistic
 └── display/         Rendu OpenCV du squelette articulé et bandeau de prédiction
 ```
 
-La suite de 16 tests unitaires valide l'intégrité de la chaîne :
+La suite de 20 tests unitaires valide l'intégrité de l'ensemble de la chaîne :
 ```powershell
 pytest -v
-# ================= 16 passed in 6.59s =================
+# ================= 20 passed in 7.27s =================
 ```
 
 ---
 
 ## 6. Guide de Démarrage Rapide
 
-Les poids du modèle ConvTransformer (`models/transformer_best.pt`) ainsi que le dictionnaire des 100 classes sont directement inclus dans le dépôt.
+Les poids du modèle retenu v1.1 (`models/msst_best.pt`) ainsi que le dictionnaire des 100 classes sont directement inclus dans le dépôt.
 
 ### 1. Installation
 ```powershell
@@ -202,27 +200,24 @@ python scripts/live.py
   - Le top-3 des candidats alternatifs est affiché en bas à gauche.
   - Appuyez sur **`Q`** ou **`Échap`** pour quitter.
 
-### 3. Reproduire le pipeline complet (Optionnel)
+### 3. Entraîner et évaluer un modèle (Optionnel)
 ```powershell
-# 1. Télécharger les poses brutes du top-100 (500 Mo, ~166 000 fichiers)
-python scripts/download_lsfb_isol.py --top-k 100
+# Entraîner le MSST-Transformer (v1.1)
+python scripts/train.py --model msst --epochs 12
 
-# 2. Prétraiter et compiler les tenseurs normalisés
-python scripts/preprocess.py --top-k 100
-
-# 3. Entraîner le ConvTransformer sur CPU
-python scripts/train.py --model transformer --epochs 12
-
-# 4. Évaluer sur les 40 signeurs du split de test
-python scripts/evaluate.py --model-path models/transformer_best.pt --model-type transformer
+# Évaluer sur les 40 signeurs du split de test
+python scripts/evaluate.py --model-path models/msst_best.pt --model-type msst --use-velocity
 ```
 
 ---
 
-## 7. Perspectives
+## 7. Roadmap & Perspectives
 
-- **V2 — Reconnaissance continue :** Extension vers le corpus LSFB-CONT avec segmentation temporelle continue (modèles CTC / Transducer) et alignement sur la syntaxe française via un modèle de langage.
-- **V3 — Text-to-Sign :** Génération inverse de trajectoires de poses 3D à partir de texte brut pour animer un avatar virtuel.
+- **v1.0 (Validé) :** Pipeline de base Top-100 (195 features, ConvTransformer à 51,8% Top-1 / 82,1% Top-5).
+- **v1.1 (Validé) :** Enrichissement cinématique (390 features positions + vitesses, symétrie miroir, MSST-Transformer à **54,5% Top-1 / 83,2% Top-5 / 54,2% Balanced**).
+- **v1.2 (En cours) :** Extension du corpus à une plus grande base (**Top-250** ou **Top-500** classes).
+- **v2.0 (Linguistique continue) :** Reconnaissance continue sur flux non segmenté (LSFB-CONT) couplée à un modèle de langue (LLM) pour la traduction en phrases complètes.
+- **v3.0 (Génération inverse) :** Text-to-Sign : synthèse de coordonnées 3D de squelettes pour animer un avatar gestuel.
 
 ---
 

@@ -7,11 +7,12 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from lsfb_live.recognition.dataset import load_split_dataset
+from lsfb_live.recognition.dataset import load_enriched_split_dataset, load_split_dataset
 from lsfb_live.recognition.models import (
     BiGRUClassifier,
     ConvTransformerClassifier,
     ModelArchitectureConfig,
+    MSSTClassifier,
 )
 from lsfb_live.recognition.trainer import (
     TrainingHyperparameters,
@@ -22,12 +23,24 @@ from lsfb_live.recognition.trainer import (
 
 def parse_cli_arguments() -> argparse.Namespace:
     """Analyse les arguments d'entraînement passés en CLI."""
-    parser = argparse.ArgumentParser(description="Entraîne un modèle de reconnaissance LSFB (BiGRU ou Transformer).")
+    parser = argparse.ArgumentParser(description="Entraîne un modèle de reconnaissance LSFB (BiGRU, Transformer, MSST).")
     parser.add_argument(
         "--model",
-        choices=["bigru", "transformer"],
-        default="bigru",
-        help="Type d'architecture à entraîner (défaut : bigru)",
+        choices=["bigru", "transformer", "msst"],
+        default="msst",
+        help="Type d'architecture à entraîner (défaut : msst)",
+    )
+    parser.add_argument(
+        "--use-velocity",
+        action="store_true",
+        default=True,
+        help="Enrichit les tenseurs avec les vitesses instantanées (390 features, défaut: True)",
+    )
+    parser.add_argument(
+        "--no-velocity",
+        action="store_false",
+        dest="use_velocity",
+        help="Désactive l'enrichissement par vitesse (195 features)",
     )
     parser.add_argument(
         "--data-dir",
@@ -53,6 +66,8 @@ def build_model_instance(model_name: str, config: ModelArchitectureConfig) -> to
         return BiGRUClassifier(config)
     if model_name == "transformer":
         return ConvTransformerClassifier(config)
+    if model_name == "msst":
+        return MSSTClassifier(config)
     raise ValueError(f"Modèle non reconnu : {model_name}")
 
 
@@ -63,19 +78,21 @@ def main() -> int:
     checkpoint_path = args.output_model or Path(f"models/{args.model}_best.pt")
 
     print(f"=== Entraînement du modèle '{args.model.upper()}' ===")
-    print(f"Données : {data_dir.resolve()}")
+    print(f"Données : {data_dir.resolve()} | Vitesses : {args.use_velocity}")
     print(f"Époques : {args.epochs} | Batch size : {args.batch_size} | LR : {args.lr}")
 
-    train_dataset = load_split_dataset(data_dir, "train", augment=True)
-    val_dataset = load_split_dataset(data_dir, "val", augment=False)
-    test_dataset = load_split_dataset(data_dir, "test", augment=False)
+    dataset_loader = load_enriched_split_dataset if args.use_velocity else load_split_dataset
+    train_dataset = dataset_loader(data_dir, "train", augment=True)
+    val_dataset = dataset_loader(data_dir, "val", augment=False)
+    test_dataset = dataset_loader(data_dir, "test", augment=False)
 
     print(f"Tailles : Train={len(train_dataset)}, Val={len(val_dataset)}, Test={len(test_dataset)}")
 
     class_weights_path = data_dir / "class_weights.npy"
     class_weights = np.load(class_weights_path) if class_weights_path.is_file() else None
 
-    arch_config = ModelArchitectureConfig(num_classes=100)
+    feature_dimension = 390 if args.use_velocity else 195
+    arch_config = ModelArchitectureConfig(input_dim=feature_dimension, num_classes=100)
     model = build_model_instance(args.model, arch_config)
     hparams = TrainingHyperparameters(
         epochs=args.epochs,

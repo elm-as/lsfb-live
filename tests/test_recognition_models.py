@@ -3,6 +3,7 @@
 import numpy as np
 import torch
 
+from lsfb_live.recognition.dataset import apply_handedness_mirror
 from lsfb_live.recognition.metrics import (
     compute_balanced_accuracy,
     compute_top_k_accuracies,
@@ -11,6 +12,7 @@ from lsfb_live.recognition.models import (
     BiGRUClassifier,
     ConvTransformerClassifier,
     ModelArchitectureConfig,
+    MSSTClassifier,
 )
 
 
@@ -34,6 +36,29 @@ def test_conv_transformer_classifier_produces_expected_output_shape():
     logits = model(dummy_input)
 
     assert logits.shape == (4, 10)
+
+
+def test_msst_classifier_produces_expected_output_shape():
+    """Vérifie la forme des logits (Batch, NumClasses) du MSSTClassifier avec 390 entrées."""
+    config = ModelArchitectureConfig(input_dim=390, hidden_dim=144, num_classes=10)
+    model = MSSTClassifier(config)
+
+    dummy_input = torch.randn(4, 40, 390)
+    logits = model(dummy_input)
+
+    assert logits.shape == (4, 10)
+
+
+def test_apply_handedness_mirror_is_an_involution():
+    """Vérifie que la double inversion miroir restitue rigoureusement la séquence d'origine."""
+    dummy_seq = np.random.randn(40, 390).astype(np.float32)
+    mirrored_once = apply_handedness_mirror(dummy_seq)
+    mirrored_twice = apply_handedness_mirror(mirrored_once)
+
+    assert np.allclose(dummy_seq, mirrored_twice, atol=1e-5)
+    # L'axe X de la première main doit avoir changé de signe et de position
+    assert not np.allclose(dummy_seq, mirrored_once)
+
 
 
 def test_compute_top_k_accuracies_calculates_correctly():
