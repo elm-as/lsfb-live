@@ -175,15 +175,15 @@ Le projet applique les principes d'architecture logicielle par domaine de la cha
 src/lsfb_live/
 ├── dataset/         Téléchargement résilient, indexation et compilation des tenseurs
 ├── landmarks/       Constantes MediaPipe et pipeline de normalisation invariante (+ vitesses)
-├── recognition/     Modèles (BiGRU, ConvTransformer, MSST), entraînement pondéré, moteur live
+├── recognition/     Modèles (BiGRU, ConvTransformer, MSST), entraînement pondéré, moteur live temporel
 ├── capture/         Gestion du flux webcam et extracteur MediaPipe Tasks Holistic
-└── display/         Rendu OpenCV du squelette articulé et bandeau de prédiction
+└── display/         Rendu OpenCV du squelette, avatar paramétrique cinématique et écran scindé
 ```
 
-La suite de 20 tests unitaires valide l'intégrité de l'ensemble de la chaîne :
+La suite de 22 tests unitaires valide l'intégrité de l'ensemble de la chaîne :
 ```powershell
 pytest -v
-# ================= 20 passed in 7.27s =================
+# ================= 22 passed in 4.77s =================
 ```
 
 ---
@@ -206,12 +206,12 @@ pip install -e .
 ### 2. Tester en direct (Webcam)
 
 #### Option A — Mode Coach Interactif (Idéal si vous ne connaissez pas les signes)
-Si vous ne connaissez pas encore la langue des signes, ce mode ouvre un écran scindé : à gauche, le squelette d'un signeur natif de Namur reproduit le geste en boucle avec un conseil d'exécution ; à droite, votre webcam analyse vos mouvements et valide votre réussite !
+Si vous ne connaissez pas encore la langue des signes, ce mode ouvre un écran scindé : à gauche, un **avatar vectoriel paramétrique (base v3)** reproduit le geste canonique en miroir parfait avec des équations cinématiques fluides ; à droite, votre webcam analyse vos mouvements en temps réel avec compensation de framerate (fenêtre temporelle glissante de 1,3 s) et alerte bimanuelle intégrée !
 ```powershell
 python scripts/practice.py
 ```
 - **Touches :**
-  - **`N`** : Signe suivant dans le catalogue guidé (ex: `RENCONTRER`, `ADORER`, `CORPS`, `MAISON`...).
+  - **`N`** : Signe suivant dans le catalogue guidé (`RENCONTRER`, `DIFFERENT`, `MAISON`, `CORPS`, `INTERPRETE`, `AVANCER`, `MONTRER`).
   - **`P`** : Signe précédent.
   - **`Q`** ou **`Échap`** : Quitter.
 
@@ -244,8 +244,9 @@ python scripts/evaluate.py --model-path models/msst_best.pt --model-type msst --
 - **v1.0 (Validé) :** Pipeline de base Top-100 (195 features, ConvTransformer à 51,8% Top-1 / 82,1% Top-5).
 - **v1.1 (Validé) :** Enrichissement cinématique (390 features positions + vitesses, symétrie miroir, MSST-Transformer à **54,5% Top-1 / 83,2% Top-5 / 54,2% Balanced**).
 - **v1.2 (Validé) :** Montée en charge sur le **Top-250** des signes LSFB (75 825 instances réelles, 33 753 séquences de test sur 40 signeurs non vus, **70,7% Top-5** et **41,6% Balanced Acc**).
+- **v1.3 / Pré-v3 (Validé) :** Moteur d'inférence temps réel invariant au framerate (fenêtrage temporel de 1,3 s), filtre anti-parasite d'inactivité et **Avatar Paramétrique Vectoriel** mathématique (première brique du Text-to-Sign).
 - **v2.0 (Prochaine étape) :** Reconnaissance continue sur flux non segmenté (LSFB-CONT) couplée à un modèle de langue (LLM) pour la traduction en phrases complètes.
-- **v3.0 (Génération inverse) :** Text-to-Sign : synthèse de coordonnées 3D de squelettes pour animer un avatar gestuel.
+- **v3.0 (Génération inverse) :** Text-to-Sign complet : synthèse de coordonnées 3D de squelettes pour animer l'avatar gestuel sur n'importe quel texte.
 
 ---
 

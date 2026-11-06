@@ -25,3 +25,4 @@ def test_render_parametric_avatar_frame():
 
     assert canvas.shape == (720, 640, 3)
     assert np.any(canvas > 0), "Le canvas doit contenir des pixels tracés pour l'avatar."
+

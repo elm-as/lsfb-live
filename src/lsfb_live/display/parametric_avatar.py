@@ -223,3 +223,4 @@ def render_parametric_avatar_frame(
     # 5. Mains articulées stylisées
     draw_styled_hand(canvas, lw_px, pose.left_hand_shape, is_left=True)
     draw_styled_hand(canvas, rw_px, pose.right_hand_shape, is_left=False)
+
