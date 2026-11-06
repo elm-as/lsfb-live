@@ -94,3 +94,19 @@ class HolisticExtractor:
         """Libère les ressources natives C++ du landmarker."""
         self._landmarker.close()
 
+
+def ensure_holistic_model_present(model_path: Path) -> None:
+    """Télécharge automatiquement le modèle MediaPipe Holistic s'il est absent du dépôt."""
+    if model_path.is_file():
+        return
+
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    url = (
+        "https://storage.googleapis.com/mediapipe-models/"
+        "holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task"
+    )
+    print(f"Modèle MediaPipe non trouvé. Téléchargement depuis Google Storage ({url})...")
+    import urllib.request
+    urllib.request.urlretrieve(url, model_path)
+    print(f"Modèle téléchargé avec succès : {model_path.resolve()}")
+

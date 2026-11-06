@@ -203,7 +203,19 @@ python -m venv .venv
 pip install -e .
 ```
 
-### 2. Lancer la reconnaissance en direct (Webcam)
+### 2. Tester en direct (Webcam)
+
+#### Option A — Mode Coach Interactif (Idéal si vous ne connaissez pas les signes)
+Si vous ne connaissez pas encore la langue des signes, ce mode ouvre un écran scindé : à gauche, le squelette d'un signeur natif de Namur reproduit le geste en boucle avec un conseil d'exécution ; à droite, votre webcam analyse vos mouvements et valide votre réussite !
+```powershell
+python scripts/practice.py
+```
+- **Touches :**
+  - **`N`** : Signe suivant dans le catalogue guidé (ex: `RENCONTRER`, `ADORER`, `CORPS`, `MAISON`...).
+  - **`P`** : Signe précédent.
+  - **`Q`** ou **`Échap`** : Quitter.
+
+#### Option B — Mode Libre
 ```powershell
 python scripts/live.py
 ```
