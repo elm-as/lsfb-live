@@ -88,7 +88,13 @@ def interpolate_sequence(raw_poses: tuple[np.ndarray, np.ndarray, np.ndarray], t
     interp_rh = resample_points(rh_arr, 21)
 
     return [
-        FrameLandmarks(interp_pose[step], interp_lh[step], interp_rh[step])
+        FrameLandmarks(
+            pose=interp_pose[step],
+            left_hand=interp_lh[step],
+            right_hand=interp_rh[step],
+            has_pose=True,
+            has_hands=True,
+        )
         for step in range(target_frames)
     ]
 
