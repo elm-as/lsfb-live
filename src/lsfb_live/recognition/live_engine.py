@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 import json
+import time
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -82,10 +83,9 @@ class LiveInferenceEngine:
 
         self._window_size = window_size
         self._threshold = confidence_threshold
+        self._window_duration = 1.3  # Durée canonique d'un signe en secondes
 
-        self._pose_history: deque[np.ndarray] = deque(maxlen=window_size)
-        self._lh_history: deque[np.ndarray] = deque(maxlen=window_size)
-        self._rh_history: deque[np.ndarray] = deque(maxlen=window_size)
+        self._history: deque[tuple[float, np.ndarray, np.ndarray, np.ndarray]] = deque(maxlen=120)
         self._smoothed_probs: Optional[np.ndarray] = None
 
     def push_frame(self, frame_landmarks: FrameLandmarks) -> Optional[SignPrediction]:
@@ -95,35 +95,38 @@ class LiveInferenceEngine:
             frame_landmarks: Repères extraits de la trame courante.
 
         Returns:
-            SignPrediction ou None si le buffer contient moins de 15 trames.
+            SignPrediction ou None si le buffer contient moins de trames significatives.
         """
-        self._pose_history.append(frame_landmarks.pose)
-        self._lh_history.append(frame_landmarks.left_hand)
-        self._rh_history.append(frame_landmarks.right_hand)
+        now = time.time()
+        self._history.append((now, frame_landmarks.pose, frame_landmarks.left_hand, frame_landmarks.right_hand))
 
-        # Minimum de trames pour avoir un geste significatif
-        if len(self._pose_history) < 15:
+        # Fenêtre temporelle glissante invariante au framerate (dernières 1.3 secondes)
+        cutoff = now - self._window_duration
+        recent = [item for item in self._history if item[0] >= cutoff]
+
+        # Minimum de trames pour interpoler un geste
+        if len(recent) < 12:
             return None
 
-        # Si aucune main n'est visible sur les 5 dernières trames, l'utilisateur ne signe pas
-        recent_has_hands = any(
-            not np.all(self._lh_history[i] == 0) or not np.all(self._rh_history[i] == 0)
-            for i in range(-min(5, len(self._pose_history)), 0)
+        # Si aucune main n'est visible sur les dernières trames, repos
+        has_hands_recent = any(
+            not np.all(item[2] == 0) or not np.all(item[3] == 0)
+            for item in recent[-4:]
         )
-        if not recent_has_hands:
+        if not has_hands_recent:
             self._smoothed_probs = None
             return SignPrediction(sign="En attente...", confidence=0.0, top5=[], is_active_sign=False)
 
-        pose_seq = np.array(self._pose_history)
-        lh_seq = np.array(self._lh_history)
-        rh_seq = np.array(self._rh_history)
+        pose_seq = np.array([item[1] for item in recent])
+        lh_seq = np.array([item[2] for item in recent])
+        rh_seq = np.array([item[3] for item in recent])
 
-        # Détection d'inactivité : si les poignets sont immobiles, on évite les fausses prédictions
+        # Détection d'inactivité : poignets immobiles
         wrist_motion = (
-            np.sum(np.abs(np.diff(pose_seq[-10:, 15, :2], axis=0)))
-            + np.sum(np.abs(np.diff(pose_seq[-10:, 16, :2], axis=0)))
+            np.sum(np.abs(np.diff(pose_seq[:, 15, :2], axis=0)))
+            + np.sum(np.abs(np.diff(pose_seq[:, 16, :2], axis=0)))
         )
-        if wrist_motion < 0.05:
+        if wrist_motion < 0.04:
             return SignPrediction(sign="En attente d'un geste...", confidence=0.0, top5=[], is_active_sign=False)
 
         # Utilisation stricte de la chaîne de normalisation partagée train/live

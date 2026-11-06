@@ -1,7 +1,7 @@
-"""Point d'entrée pour le mode entraînement interactif (Coach LSFB).
+"""Point d'entrée pour le mode entraînement interactif avec Avatar LSFB (Base v3).
 
-Affiche un écran scindé : à gauche l'animation de référence d'un signeur natif,
-à droite votre flux webcam avec détection et rétroaction en direct.
+Affiche un écran scindé : à gauche l'avatar cinématique paramétrique (100% miroir et anatomique),
+à droite votre flux webcam avec détection et rétroaction de validation en direct.
 """
 
 from pathlib import Path
@@ -10,110 +10,60 @@ import sys
 import cv2
 import numpy as np
 
-from lsfb_live.capture.holistic_extractor import (
-    FrameLandmarks,
-    HolisticExtractor,
-    ensure_holistic_model_present,
-)
+from lsfb_live.capture.holistic_extractor import HolisticExtractor, ensure_holistic_model_present
 from lsfb_live.capture.webcam_stream import WebcamStream
-from lsfb_live.display.coach_renderer import (
-    assemble_practice_split_screen,
-    build_coach_reference_card,
-    draw_centered_skeleton,
-)
+from lsfb_live.display.coach_renderer import assemble_practice_split_screen, build_coach_reference_card
+from lsfb_live.display.parametric_avatar import render_parametric_avatar_frame
 from lsfb_live.display.visualizer import draw_hud_panel, draw_skeleton_layer
 from lsfb_live.recognition.live_engine import LiveInferenceEngine
 
-# Catalogue des signes guidés recommandés avec instances nettes à forte amplitude
-GUIDED_SIGNS: list[dict[str, str]] = [
+# Catalogue des signes canoniques avec modèle cinématique paramétrique
+GUIDED_SIGNS: list[dict[str, object]] = [
     {
         "sign": "RENCONTRER",
-        "instance_id": "CLSFBI0505A_S012_B_141585_142879",
-        "description": "Deux index verticaux qui s'avancent et se touchent face a face.",
+        "description": "Deux index verticaux face a face se rejoignant au centre.",
+        "is_bimanual": True,
     },
     {
         "sign": "DIFFERENT",
-        "instance_id": "CLSFBI0115A_S002_B_515404_516821",
-        "description": "Index pointes vers l'avant qui s'ecartent vivement sur les cotes.",
+        "description": "Deux index au centre qui s'ecartent vivement sur les cotes.",
+        "is_bimanual": True,
     },
     {
         "sign": "MAISON",
-        "instance_id": "CLSFBI0103A_S002_B_9935_13870",
-        "description": "Mains obliques jointes par le bout des doigts formant un toit pointu.",
+        "description": "Mains obliques jointes par le bout des doigts formant un toit.",
+        "is_bimanual": True,
     },
     {
         "sign": "CORPS",
-        "instance_id": "CLSFBI1415A_S033_B_272212_272698",
-        "description": "Mains ouvertes descendant le long du buste, de la poitrine a la taille.",
-    },
-    {
-        "sign": "INTERPRETE",
-        "instance_id": "CLSFBI0313A_S007_B_196842_202070",
-        "description": "Mains face a face avec rotation alternee de va-et-vient au torse.",
+        "description": "Mains ouvertes descendant le long du buste jusqu'a la taille.",
+        "is_bimanual": True,
     },
     {
         "sign": "AVANCER",
-        "instance_id": "CLSFBI0110A_S001_B_126658_130076",
-        "description": "Les deux mains ouvertes qui poussent franchement vers la camera.",
+        "description": "Les deux mains ouvertes poussant franchement vers la camera.",
+        "is_bimanual": True,
     },
     {
         "sign": "MONTRER",
-        "instance_id": "CLSFBI0111A_S001_B_357087_357635",
-        "description": "Index dominant tendu qui pointe franchement droit devant.",
+        "description": "Main droite avec l'index pointe qui vise droit devant vous.",
+        "is_bimanual": False,
+    },
+    {
+        "sign": "INTERPRETE",
+        "description": "Mains ouvertes avec rotation alternee de va-et-vient au torse.",
+        "is_bimanual": True,
     },
 ]
 
 
-def interpolate_sequence(raw_poses: tuple[np.ndarray, np.ndarray, np.ndarray], target_frames: int = 45) -> list[FrameLandmarks]:
-    """Interpole linéairement une séquence de poses pour une animation fluide à ~30 fps."""
-    pose_arr, lh_arr, rh_arr = raw_poses
-    orig_t = np.linspace(0.0, 1.0, len(pose_arr))
-    target_t = np.linspace(0.0, 1.0, target_frames)
-
-    def resample_points(points: np.ndarray, count: int) -> np.ndarray:
-        clean = np.nan_to_num(points, nan=0.0)
-        res = np.zeros((target_frames, count, 3), dtype=np.float32)
-        for idx in range(count):
-            for dim in range(3):
-                res[:, idx, dim] = np.interp(target_t, orig_t, clean[:, idx, dim])
-        return res
-
-    interp_pose = resample_points(pose_arr, 33)
-    interp_lh = resample_points(lh_arr, 21)
-    interp_rh = resample_points(rh_arr, 21)
-
-    return [
-        FrameLandmarks(
-            pose=interp_pose[step],
-            left_hand=interp_lh[step],
-            right_hand=interp_rh[step],
-            has_pose=True,
-            has_hands=True,
-        )
-        for step in range(target_frames)
-    ]
-
-
-def load_guided_sign_frames(instance_id: str, raw_dir: Path) -> list[FrameLandmarks]:
-    """Charge les fichiers numpy d'une instance et retourne la séquence interpolée."""
-    pose_path = raw_dir / "poses" / "pose" / f"{instance_id}.npy"
-    lh_path = raw_dir / "poses" / "left_hand" / f"{instance_id}.npy"
-    rh_path = raw_dir / "poses" / "right_hand" / f"{instance_id}.npy"
-
-    pose = np.load(pose_path)
-    left_hand = np.load(lh_path)
-    right_hand = np.load(rh_path)
-    return interpolate_sequence((pose, left_hand, right_hand), target_frames=45)
-
-
 def parse_cli_arguments() -> argparse.Namespace:
     """Analyse les arguments CLI pour le mode coach."""
-    parser = argparse.ArgumentParser(description="Mode entraînement interactif avec coach LSFB.")
+    parser = argparse.ArgumentParser(description="Mode entraînement interactif avec Avatar LSFB.")
     parser.add_argument("--camera-index", type=int, default=0, help="Index de la caméra (défaut : 0)")
-    parser.add_argument("--threshold", type=float, default=0.30, help="Seuil de détection pour valider le signe (défaut : 0.30)")
+    parser.add_argument("--threshold", type=float, default=0.25, help="Seuil de détection pour valider le signe (défaut : 0.25)")
     parser.add_argument("--model-path", type=Path, default=Path("models/msst_best.pt"), help="Poids du modèle")
     parser.add_argument("--mapping-path", type=Path, default=Path("models/class_mapping.json"), help="Fichier de mappage")
-    parser.add_argument("--raw-dir", type=Path, default=Path("data/raw/lsfb_isol"), help="Dossier des poses brutes")
     return parser.parse_args()
 
 
@@ -124,16 +74,13 @@ def run_coach_session(
     args: argparse.Namespace,
 ) -> None:
     """Boucle principale de la session d'entraînement avec écran scindé."""
-    window_name = "LSFB Coach — Mode Entrainement Interactif"
+    window_name = "LSFB Coach — Avatar Cinematique & Webcam Live"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 1280, 720)
     cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
 
     current_idx = 0
-    ref_frames = load_guided_sign_frames(GUIDED_SIGNS[current_idx]["instance_id"], args.raw_dir)
-    total_ref = len(ref_frames)
-    pause_steps = 15  # Pause d'une demi-seconde à la fin du signe
-    cycle_length = total_ref + pause_steps
+    cycle_steps = 45  # Durée du cycle d'animation (environ 1.5s à 30 FPS)
     step_counter = 0
 
     try:
@@ -149,36 +96,50 @@ def run_coach_session(
             draw_skeleton_layer(webcam_frame, landmarks)
             draw_hud_panel(webcam_frame, prediction, stream.fps)
 
-            # Gestion de l'animation de référence
-            frame_idx = min(step_counter % cycle_length, total_ref - 1)
-            current_ref_landmark = ref_frames[frame_idx]
+            # Rendu de l'avatar paramétrique cinématique (100% miroir et fluide)
+            active_sign_spec = GUIDED_SIGNS[current_idx]
+            sign_name = str(active_sign_spec["sign"])
+            is_bimanual = bool(active_sign_spec["is_bimanual"])
+
+            progress = float(step_counter % cycle_steps) / float(cycle_steps)
             step_counter += 1
 
             ref_canvas = np.zeros((720, 640, 3), dtype=np.uint8)
-            ref_canvas[:] = (22, 24, 28)  # Fond ardoise foncé
-            draw_centered_skeleton(ref_canvas, current_ref_landmark)
-
-            active_sign_spec = GUIDED_SIGNS[current_idx]
-            progress = float(frame_idx) / float(total_ref - 1)
+            ref_canvas[:] = (22, 25, 32)
+            render_parametric_avatar_frame(ref_canvas, sign_name, progress)
             build_coach_reference_card(
                 ref_canvas,
-                active_sign_spec["sign"],
-                active_sign_spec["description"],
+                sign_name,
+                str(active_sign_spec["description"]),
                 progress,
+                is_bimanual=is_bimanual,
             )
+
+            # Analyse des mains de l'utilisateur
+            has_left_hand = not np.all(landmarks.left_hand == 0)
+            has_right_hand = not np.all(landmarks.right_hand == 0)
+            hands_warning = None
+            if is_bimanual and (not has_left_hand or not has_right_hand):
+                hands_warning = "ATTENTION : 2 MAINS REQUISES (Levez vos deux mains !)"
 
             # Vérification de la réussite du signe cible
             is_match = False
             target_conf = 0.0
-            if prediction is not None:
+            if prediction is not None and hands_warning is None:
                 for cand_sign, cand_prob in prediction.top5:
-                    if cand_sign == active_sign_spec["sign"]:
+                    if cand_sign == sign_name:
                         target_conf = cand_prob
                         if cand_prob >= args.threshold:
                             is_match = True
                         break
 
-            split_screen = assemble_practice_split_screen(ref_canvas, webcam_frame, is_match, target_conf)
+            split_screen = assemble_practice_split_screen(
+                ref_canvas,
+                webcam_frame,
+                is_match,
+                target_conf,
+                hands_warning=hands_warning,
+            )
             cv2.imshow(window_name, split_screen)
 
             key = cv2.waitKey(1) & 0xFF
@@ -186,15 +147,9 @@ def run_coach_session(
                 break
             if key in (ord("n"), ord("N")):  # Signe suivant
                 current_idx = (current_idx + 1) % len(GUIDED_SIGNS)
-                ref_frames = load_guided_sign_frames(GUIDED_SIGNS[current_idx]["instance_id"], args.raw_dir)
-                total_ref = len(ref_frames)
-                cycle_length = total_ref + pause_steps
                 step_counter = 0
             if key in (ord("p"), ord("P")):  # Signe précédent
                 current_idx = (current_idx - 1) % len(GUIDED_SIGNS)
-                ref_frames = load_guided_sign_frames(GUIDED_SIGNS[current_idx]["instance_id"], args.raw_dir)
-                total_ref = len(ref_frames)
-                cycle_length = total_ref + pause_steps
                 step_counter = 0
     finally:
         cv2.destroyAllWindows()
@@ -205,8 +160,8 @@ def main() -> int:
     args = parse_cli_arguments()
     ensure_holistic_model_present(Path("models/holistic_landmarker.task"))
 
-    print("=== Démarrage du mode Coach LSFB ===")
-    print(f"Catalogue de {len(GUIDED_SIGNS)} signes faciles charges.")
+    print("=== Démarrage du mode Coach LSFB (Avatar Paramétrique v3) ===")
+    print(f"Catalogue de {len(GUIDED_SIGNS)} signes canoniques charges.")
     print("Commandes dans la fenetre : [N] Suivant | [P] Precedent | [Q] Quitter")
 
     try:
