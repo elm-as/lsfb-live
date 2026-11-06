@@ -31,14 +31,29 @@ def draw_centered_skeleton(
 
     scale = (width * 0.28) / shoulder_dist
     target_center_x = width * 0.50
-    target_center_y = height * 0.48
+    target_center_y = height * 0.50
 
     def to_canvas_pixel(point: np.ndarray) -> tuple[int, int]:
-        px = int(target_center_x + (point[0] - mid_shoulder_x) * scale)
+        # Inversion miroir de l'axe X pour que le coach fonctionne comme un miroir
+        px = int(target_center_x - (point[0] - mid_shoulder_x) * scale)
         py = int(target_center_y + (point[1] - mid_shoulder_y) * scale)
         return max(0, min(width - 1, px)), max(0, min(height - 1, py))
 
-    # Os du torse et bras (couleur ambre chaude)
+    # 1. Tracé de la tête et du cou
+    nose_px = to_canvas_pixel(pose[0])
+    neck_px = to_canvas_pixel(np.array([mid_shoulder_x, mid_shoulder_y, 0.0]))
+    head_radius = max(18, int(shoulder_dist * scale * 0.30))
+
+    cv2.line(canvas, neck_px, nose_px, (140, 150, 170), 3, cv2.LINE_AA)
+    cv2.circle(canvas, nose_px, head_radius, (35, 40, 50), -1, cv2.LINE_AA)
+    cv2.circle(canvas, nose_px, head_radius, (160, 180, 210), 2, cv2.LINE_AA)
+    # Yeux
+    eye_l = to_canvas_pixel(pose[2])
+    eye_r = to_canvas_pixel(pose[5])
+    cv2.circle(canvas, eye_l, 3, (220, 230, 255), -1, cv2.LINE_AA)
+    cv2.circle(canvas, eye_r, 3, (220, 230, 255), -1, cv2.LINE_AA)
+
+    # 2. Buste et bras (ambre chaud)
     for p1, p2 in POSE_CONNECTIONS:
         pt1 = to_canvas_pixel(pose[p1])
         pt2 = to_canvas_pixel(pose[p2])
@@ -46,20 +61,22 @@ def draw_centered_skeleton(
     for idx in [11, 12, 13, 14, 15, 16]:
         cv2.circle(canvas, to_canvas_pixel(pose[idx]), 5, (255, 220, 100), -1, cv2.LINE_AA)
 
-    # Mains gauche (cyan) et droite (vert menthe)
+    # 3. Mains connectées aux poignets
     hands_specs = [
-        (landmarks.left_hand, (255, 210, 80)),
-        (landmarks.right_hand, (80, 240, 160)),
+        (landmarks.left_hand, pose[15], (255, 210, 80)),
+        (landmarks.right_hand, pose[16], (80, 240, 160)),
     ]
-    for hand_coords, color in hands_specs:
+    for hand_coords, wrist_coords, color in hands_specs:
         if np.all(hand_coords == 0) or np.isnan(hand_coords).any():
             continue
+        # Raccordement poignet-main
+        cv2.line(canvas, to_canvas_pixel(wrist_coords), to_canvas_pixel(hand_coords[0]), color, 2, cv2.LINE_AA)
         for p1, p2 in HAND_CONNECTIONS:
             pt1 = to_canvas_pixel(hand_coords[p1])
             pt2 = to_canvas_pixel(hand_coords[p2])
             cv2.line(canvas, pt1, pt2, color, 2, cv2.LINE_AA)
         for idx in range(21):
-            cv2.circle(canvas, to_canvas_pixel(hand_coords[idx]), 4, (255, 255, 255), -1, cv2.LINE_AA)
+            cv2.circle(canvas, to_canvas_pixel(hand_coords[idx]), 3, (255, 255, 255), -1, cv2.LINE_AA)
 
 
 def build_coach_reference_card(
@@ -130,3 +147,4 @@ def assemble_practice_split_screen(
         cv2.putText(webcam_resized, feedback_text, (35, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (255, 255, 255), 2, cv2.LINE_AA)
 
     return np.hstack([ref_canvas, webcam_resized])
+

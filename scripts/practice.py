@@ -24,47 +24,42 @@ from lsfb_live.display.coach_renderer import (
 from lsfb_live.display.visualizer import draw_hud_panel, draw_skeleton_layer
 from lsfb_live.recognition.live_engine import LiveInferenceEngine
 
-# Catalogue des signes guidés recommandés pour débuter
+# Catalogue des signes guidés recommandés avec instances nettes à forte amplitude
 GUIDED_SIGNS: list[dict[str, str]] = [
     {
         "sign": "RENCONTRER",
-        "instance_id": "CLSFBI0103A_S001_B_352717_352802",
-        "description": "Index verticaux qui s'avancent et se rejoignent face a face.",
-    },
-    {
-        "sign": "ADORER",
-        "instance_id": "CLSFBI0121A_S001_B_165614_165893",
-        "description": "Mains ouvertes appuyees avec insistance sur la poitrine.",
-    },
-    {
-        "sign": "CORPS",
-        "instance_id": "CLSFBI0111A_S002_B_216532_217061",
-        "description": "Mains plates face au torse descendant vers la taille.",
-    },
-    {
-        "sign": "MAISON",
-        "instance_id": "CLSFBI0103A_S001_B_286114_286297",
-        "description": "Bout des doigts joints formant un toit en triangle a 45 degres.",
+        "instance_id": "CLSFBI0505A_S012_B_141585_142879",
+        "description": "Deux index verticaux qui s'avancent et se touchent face a face.",
     },
     {
         "sign": "DIFFERENT",
-        "instance_id": "CLSFBI0103A_S001_B_286621_286862",
-        "description": "Les deux index pointes vers l'avant s'ecartant brusquement.",
+        "instance_id": "CLSFBI0115A_S002_B_515404_516821",
+        "description": "Index pointes vers l'avant qui s'ecartent vivement sur les cotes.",
     },
     {
-        "sign": "VOIR",
-        "instance_id": "CLSFBI0103A_S002_B_55203_55498",
-        "description": "Index et majeur en V avancant depuis les yeux vers l'avant.",
+        "sign": "MAISON",
+        "instance_id": "CLSFBI0103A_S002_B_9935_13870",
+        "description": "Mains obliques jointes par le bout des doigts formant un toit pointu.",
+    },
+    {
+        "sign": "CORPS",
+        "instance_id": "CLSFBI1415A_S033_B_272212_272698",
+        "description": "Mains ouvertes descendant le long du buste, de la poitrine a la taille.",
     },
     {
         "sign": "INTERPRETE",
-        "instance_id": "CLSFBI0111A_S001_B_56422_56779",
-        "description": "Mains face a face en rotation alternee de va-et-vient.",
+        "instance_id": "CLSFBI0313A_S007_B_196842_202070",
+        "description": "Mains face a face avec rotation alternee de va-et-vient au torse.",
     },
     {
-        "sign": "COMMUNICATION",
-        "instance_id": "CLSFBI0111A_S001_B_570020_570682",
-        "description": "Mains en C face a face oscillant alternativement.",
+        "sign": "AVANCER",
+        "instance_id": "CLSFBI0110A_S001_B_126658_130076",
+        "description": "Les deux mains ouvertes qui poussent franchement vers la camera.",
+    },
+    {
+        "sign": "MONTRER",
+        "instance_id": "CLSFBI0111A_S001_B_357087_357635",
+        "description": "Index dominant tendu qui pointe franchement droit devant.",
     },
 ]
 
@@ -132,6 +127,7 @@ def run_coach_session(
     window_name = "LSFB Coach — Mode Entrainement Interactif"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 1280, 720)
+    cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
 
     current_idx = 0
     ref_frames = load_guided_sign_frames(GUIDED_SIGNS[current_idx]["instance_id"], args.raw_dir)

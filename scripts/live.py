@@ -55,6 +55,7 @@ def run_live_recognition_loop(
     window_name = "LSFB Live — Reconnaissance en direct (Appuyez sur 'Q' pour quitter)"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 960, 720)
+    cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
 
     try:
         while True:

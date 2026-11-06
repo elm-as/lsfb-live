@@ -54,10 +54,20 @@ def test_live_engine_buffers_and_predicts(mock_environment):
         pred = engine.push_frame(dummy_landmarks)
         assert pred is None
 
-    # Ajout jusqu'à 20 trames -> prédiction active
+    # Ajout jusqu'à 20 trames avec mouvement actif des mains -> prédiction active
     last_pred = None
-    for _ in range(10):
-        last_pred = engine.push_frame(dummy_landmarks)
+    for step in range(10):
+        moving_pose = np.ones((33, 3), dtype=np.float32)
+        moving_pose[15, :2] += float(step) * 0.05
+        moving_pose[16, :2] += float(step) * 0.05
+        active_landmarks = FrameLandmarks(
+            pose=moving_pose,
+            left_hand=np.ones((21, 3), dtype=np.float32),
+            right_hand=np.ones((21, 3), dtype=np.float32),
+            has_pose=True,
+            has_hands=True,
+        )
+        last_pred = engine.push_frame(active_landmarks)
 
     assert last_pred is not None
     assert last_pred.confidence >= 0.0
