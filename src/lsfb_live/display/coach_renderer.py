@@ -139,8 +139,4 @@ def assemble_practice_split_screen(
         cv2.putText(webcam_resized, feedback_text, (35, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (255, 255, 255), 2, cv2.LINE_AA)
 
     return np.hstack([ref_canvas, webcam_resized])
-        feedback_text = f"BRAVO ! SIGNE VALIDE ({target_confidence * 100:.1f}%)"
-        cv2.putText(webcam_resized, feedback_text, (35, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (255, 255, 255), 2, cv2.LINE_AA)
-
-    return np.hstack([ref_canvas, webcam_resized])
 
