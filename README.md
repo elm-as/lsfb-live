@@ -8,11 +8,17 @@
 [![Top-1 Accuracy](https://img.shields.io/badge/Top--1%20Accuracy-80.47%25%20(v1.4)-brightgreen?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 [![Top-5 Accuracy](https://img.shields.io/badge/Top--5%20Accuracy-95.84%25%20(v1.4)-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 [![Architecture](https://img.shields.io/badge/Architecture-BiStream--MSST%20(416%20dims)-purple?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Tests](https://img.shields.io/badge/Tests-26%20Passing-brightgreen?style=for-the-badge)](#5-architecture-du-projet)
+[![Tests](https://img.shields.io/badge/Tests-29%20Passing-brightgreen?style=for-the-badge)](#5-architecture-du-projet)
 
 *Un pipeline complet de Data Science : du corpus de poses de l'Université de Namur jusqu'à la classification temps réel face webcam sur un processeur standard d'ordinateur portable, sans carte graphique dédiée.*
 
 </div>
+
+### Démonstration Temps Réel (v1.4 — BlazePalm `VIDEO` + BiStream-MSST)
+
+| `AIMER` (Paume ouverte sur le torse — **81,1%**) | `PAPA` (Configuration « L » au menton — **57,6%**) | `OUBLIER` (Poing fermé près de la tempe — **46,9%**) |
+| :---: | :---: | :---: |
+| ![AIMER](docs/assets/demo_aimer.png) | ![PAPA](docs/assets/demo_papa.jpg) | ![OUBLIER](docs/assets/demo_oublier.jpg) |
 
 ---
 
@@ -175,10 +181,10 @@ src/lsfb_live/
 └── display/         Rendu OpenCV du squelette, avatar paramétrique cinématique et écran scindé
 ```
 
-La suite de 26 tests unitaires valide l'intégrité de l'ensemble de la chaîne :
+La suite de 29 tests unitaires valide l'intégrité de l'ensemble de la chaîne :
 ```powershell
 pytest -v
-# ================= 26 passed in 10.36s =================
+# ================= 29 passed in 4.65s =================
 ```
 
 ---
@@ -200,28 +206,29 @@ pip install -e .
 
 ### 2. Tester en direct (Webcam)
 
-#### Option A — Mode Coach Interactif (Idéal si vous ne connaissez pas les signes)
-Si vous ne connaissez pas encore la langue des signes, ce mode ouvre un écran scindé : à gauche, un **avatar vectoriel paramétrique (base v3)** reproduit le geste canonique en miroir parfait avec des équations cinématiques fluides ; à droite, votre webcam analyse vos mouvements en temps réel avec compensation de framerate (fenêtre temporelle glissante de 1,3 s) et alerte bimanuelle intégrée !
+#### Option A — Mode Coach Interactif & Séquenceur Text-to-Sign v3 (`practice.py`)
+Ce mode ouvre un écran scindé : à gauche, un **avatar vectoriel paramétrique (base v3)** reproduit les **14 gestes canoniques** (`AIMER`, `PAPA`, `OUBLIER`, `COMPRENDRE`, `RENCONTRER`, `DIFFERENT`, `MAISON`, `CORPS`, `AVANCER`, `MONTRER`, `INTERPRETE`, `ECOLE`, `FAMILLE`, `AMI`) ou enchaîne des **phrases complètes en LSFB** par interpolation cosinus continue ; à droite, votre webcam analyse vos mouvements en temps réel.
 ```powershell
 python scripts/practice.py
 ```
 - **Touches :**
-  - **`N`** : Signe suivant dans le catalogue guidé (`RENCONTRER`, `DIFFERENT`, `MAISON`, `CORPS`, `INTERPRETE`, `AVANCER`, `MONTRER`).
-  - **`P`** : Signe précédent.
+  - **`N` / `P`** : Signe suivant / précédent (ou phrase suivante / précédente en mode Phrase).
+  - **`T`** : Basculer entre le **Mode Signe Isolé** et le **Mode Phrase v3 (Text-to-Sign)**.
   - **`Q`** ou **`Échap`** : Quitter.
 
-#### Option B — Mode Libre
+#### Option B — Mode Libre & Construction de Phrases en Direct v2 (`live.py`)
 ```powershell
 python scripts/live.py
 ```
-*Le modèle MediaPipe Holistic (`holistic_landmarker.task`, 13 Mo) est téléchargé automatiquement dès le premier lancement si absent.*
+*Les modèles MediaPipe (`hand_landmarker.task` et `pose_landmarker_lite.task`) sont téléchargés automatiquement dès le premier lancement si absents.*
 
 - **Contrôles :**
   - Placez-vous face caméra (buste et mains visibles).
-  - Le squelette articulé s'affiche en surimpression temps réel.
-  - Le signe détecté et le niveau de confiance s'affichent en haut à gauche.
-  - Le top-3 des candidats alternatifs est affiché en bas à gauche.
-  - Appuyez sur **`Q`** ou **`Échap`** pour quitter.
+  - Le squelette articulé 21-points par main s'affiche en surimpression temps réel.
+  - Le bandeau inférieur accumule les signes stables validés pour **composer une phrase LSFB et sa transcription française** au fil de l'eau (`PAPA -> AIMER -> FAMILLE` $\Rightarrow$ *« Papa aime la famille. »*).
+  - **`C`** : Effacer la phrase en cours.
+  - **`Retour arrière` (`Backspace`)** : Supprimer le dernier signe validé.
+  - **`Q`** ou **`Échap`** : Quitter.
 
 ### 3. Entraîner et évaluer un modèle (Optionnel)
 ```powershell

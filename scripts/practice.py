@@ -13,12 +13,36 @@ import numpy as np
 from lsfb_live.capture.holistic_extractor import HolisticExtractor, ensure_holistic_model_present
 from lsfb_live.capture.webcam_stream import WebcamStream
 from lsfb_live.display.coach_renderer import assemble_practice_split_screen, build_coach_reference_card
-from lsfb_live.display.parametric_avatar import render_parametric_avatar_frame
+from lsfb_live.display.parametric_avatar import (
+    compute_sequence_avatar_pose,
+    render_parametric_avatar_frame,
+    render_parametric_pose_state,
+)
 from lsfb_live.display.visualizer import draw_hud_panel, draw_skeleton_layer
 from lsfb_live.recognition.live_engine import LiveInferenceEngine
 
-# Catalogue des signes canoniques avec modèle cinématique paramétrique
+# Catalogue des 14 signes canoniques avec modèle cinématique paramétrique (v1.4 / v3)
 GUIDED_SIGNS: list[dict[str, object]] = [
+    {
+        "sign": "AIMER",
+        "description": "Main ouverte posee sur le coeur/torse glissant avec douceur.",
+        "is_bimanual": False,
+    },
+    {
+        "sign": "PAPA",
+        "description": "Main en 'L' (pouce + index tendus) tapotant pres du menton.",
+        "is_bimanual": False,
+    },
+    {
+        "sign": "OUBLIER",
+        "description": "Main passant devant le front et se refermant en poing.",
+        "is_bimanual": False,
+    },
+    {
+        "sign": "COMPRENDRE",
+        "description": "Poing pres de la tempe qui s'ouvre vers le haut en 'L'.",
+        "is_bimanual": False,
+    },
     {
         "sign": "RENCONTRER",
         "description": "Deux index verticaux face a face se rejoignant au centre.",
@@ -54,6 +78,29 @@ GUIDED_SIGNS: list[dict[str, object]] = [
         "description": "Mains ouvertes avec rotation alternee de va-et-vient au torse.",
         "is_bimanual": True,
     },
+    {
+        "sign": "ECOLE",
+        "description": "Deux mains ouvertes devant le buste qui battent ensemble.",
+        "is_bimanual": True,
+    },
+    {
+        "sign": "FAMILLE",
+        "description": "Deux mains ouvertes decrivant un cercle horizontal devant soi.",
+        "is_bimanual": True,
+    },
+    {
+        "sign": "AMI",
+        "description": "Deux poings fermes qui se rejoignent chaleureusement au centre.",
+        "is_bimanual": True,
+    },
+]
+
+# Phrases canoniques pour la démonstration Text-to-Sign (v3)
+TEXT_TO_SIGN_SENTENCES: list[list[str]] = [
+    ["PAPA", "AIMER", "FAMILLE"],
+    ["RENCONTRER", "AMI", "ECOLE"],
+    ["INTERPRETE", "COMPRENDRE", "DIFFERENT"],
+    ["AVANCER", "MAISON", "OUBLIER"],
 ]
 
 
@@ -81,6 +128,8 @@ def run_coach_session(
     cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
 
     current_idx = 0
+    sentence_idx = 0
+    is_sentence_mode = False
     cycle_steps = 45  # Durée du cycle d'animation (environ 1.5s à 30 FPS)
     step_counter = 0
 
@@ -99,24 +148,41 @@ def run_coach_session(
             draw_skeleton_layer(webcam_frame, landmarks, is_mirrored=True)
             draw_hud_panel(webcam_frame, prediction, stream.fps)
 
-            # Rendu de l'avatar paramétrique cinématique (100% miroir et fluide)
-            active_sign_spec = GUIDED_SIGNS[current_idx]
-            sign_name = str(active_sign_spec["sign"])
-            is_bimanual = bool(active_sign_spec["is_bimanual"])
-
-            progress = float(step_counter % cycle_steps) / float(cycle_steps)
-            step_counter += 1
-
             ref_canvas = np.zeros((720, 640, 3), dtype=np.uint8)
             ref_canvas[:] = (22, 25, 32)
-            render_parametric_avatar_frame(ref_canvas, sign_name, progress)
-            build_coach_reference_card(
-                ref_canvas,
-                sign_name,
-                str(active_sign_spec["description"]),
-                progress,
-                is_bimanual=is_bimanual,
-            )
+
+            if is_sentence_mode:
+                active_sentence = TEXT_TO_SIGN_SENTENCES[sentence_idx]
+                seq_steps = cycle_steps * len(active_sentence)
+                progress = float(step_counter % seq_steps) / float(seq_steps)
+                step_counter += 1
+                sign_name, pose_state = compute_sequence_avatar_pose(active_sentence, progress)
+                render_parametric_pose_state(ref_canvas, pose_state)
+                sentence_str = " -> ".join(active_sentence)
+                build_coach_reference_card(
+                    ref_canvas,
+                    f"PHRASE : {sign_name}",
+                    f"Sequence v3 (Text-to-Sign) : {sentence_str}",
+                    progress,
+                    is_bimanual=False,
+                )
+                is_bimanual = False
+            else:
+                active_sign_spec = GUIDED_SIGNS[current_idx]
+                sign_name = str(active_sign_spec["sign"])
+                is_bimanual = bool(active_sign_spec["is_bimanual"])
+
+                progress = float(step_counter % cycle_steps) / float(cycle_steps)
+                step_counter += 1
+
+                render_parametric_avatar_frame(ref_canvas, sign_name, progress)
+                build_coach_reference_card(
+                    ref_canvas,
+                    sign_name,
+                    str(active_sign_spec["description"]),
+                    progress,
+                    is_bimanual=is_bimanual,
+                )
 
             # Analyse des mains de l'utilisateur
             has_left_hand = not np.all(landmarks.left_hand == 0)
@@ -148,11 +214,20 @@ def run_coach_session(
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), ord("Q"), 27):
                 break
-            if key in (ord("n"), ord("N")):  # Signe suivant
-                current_idx = (current_idx + 1) % len(GUIDED_SIGNS)
+            if key in (ord("t"), ord("T")):  # Bascule Mode Signe Isolé <-> Mode Phrase v3
+                is_sentence_mode = not is_sentence_mode
                 step_counter = 0
-            if key in (ord("p"), ord("P")):  # Signe précédent
-                current_idx = (current_idx - 1) % len(GUIDED_SIGNS)
+            if key in (ord("n"), ord("N")):  # Suivant
+                if is_sentence_mode:
+                    sentence_idx = (sentence_idx + 1) % len(TEXT_TO_SIGN_SENTENCES)
+                else:
+                    current_idx = (current_idx + 1) % len(GUIDED_SIGNS)
+                step_counter = 0
+            if key in (ord("p"), ord("P")):  # Précédent
+                if is_sentence_mode:
+                    sentence_idx = (sentence_idx - 1) % len(TEXT_TO_SIGN_SENTENCES)
+                else:
+                    current_idx = (current_idx - 1) % len(GUIDED_SIGNS)
                 step_counter = 0
     finally:
         cv2.destroyAllWindows()

@@ -6,6 +6,7 @@ import numpy as np
 
 from lsfb_live.capture.holistic_extractor import FrameLandmarks
 from lsfb_live.recognition.live_engine import SignPrediction
+from lsfb_live.recognition.sentence_builder import SentenceSnapshot
 
 # Connexions du torse supérieur MediaPipe Pose
 POSE_CONNECTIONS = [
@@ -109,4 +110,60 @@ def draw_hud_panel(
         y_offset += 20
         cand_str = f"  {sign_name[:12]:<12} {prob * 100:4.1f}%"
         cv2.putText(frame, cand_str, (15, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1)
+
+
+def draw_sentence_banner(frame: np.ndarray, snapshot: SentenceSnapshot) -> None:
+    """Affiche en bas à droite le bandeau de phrase continue LSFB (v2.0)."""
+    height, width = frame.shape[:2]
+    panel_x = 290
+    if width <= panel_x + 120:
+        return
+
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (panel_x, height - 90), (width, height), (18, 22, 28), -1)
+    cv2.addWeighted(overlay, 0.82, frame, 0.18, 0, frame)
+
+    gloss_chain = " -> ".join(snapshot.glosses) if snapshot.glosses else "[Aucun signe valide]"
+    cv2.putText(
+        frame,
+        f"GLOSES LSFB : {gloss_chain}",
+        (panel_x + 14, height - 62),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.46,
+        (90, 230, 180),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        snapshot.french_text,
+        (panel_x + 14, height - 34),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
+        (245, 245, 250),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        "[C] Effacer phrase  |  [Retour] Suppr. dernier  |  [Q] Quitter",
+        (panel_x + 14, height - 10),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.38,
+        (150, 160, 175),
+        1,
+        cv2.LINE_AA,
+    )
+
+    if snapshot.candidate_sign is not None and snapshot.stability_ratio > 0.0:
+        bar_w = int((width - panel_x - 28) * snapshot.stability_ratio)
+        cv2.line(
+            frame,
+            (panel_x + 14, height - 86),
+            (panel_x + 14 + bar_w, height - 86),
+            (0, 220, 255),
+            3,
+            cv2.LINE_AA,
+        )
+
 

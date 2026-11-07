@@ -10,8 +10,13 @@ from lsfb_live.capture.holistic_extractor import (
     ensure_holistic_model_present,
 )
 from lsfb_live.capture.webcam_stream import WebcamStream
-from lsfb_live.display.visualizer import draw_hud_panel, draw_skeleton_layer
+from lsfb_live.display.visualizer import (
+    draw_hud_panel,
+    draw_sentence_banner,
+    draw_skeleton_layer,
+)
 from lsfb_live.recognition.live_engine import LiveInferenceEngine
+from lsfb_live.recognition.sentence_builder import GlossSentenceAccumulator
 
 
 def parse_cli_arguments() -> argparse.Namespace:
@@ -52,10 +57,11 @@ def run_live_recognition_loop(
     engine: LiveInferenceEngine,
 ) -> None:
     """Boucle temps réel de capture, prédiction et affichage."""
-    window_name = "LSFB Live — Reconnaissance en direct (Appuyez sur 'Q' pour quitter)"
+    window_name = "LSFB Live — Reconnaissance & Phrase en direct (Appuyez sur 'Q' pour quitter)"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 960, 720)
     cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
+    sentence_accumulator = GlossSentenceAccumulator(min_stable_steps=3, max_glosses=7)
 
     try:
         while True:
@@ -66,16 +72,22 @@ def run_live_recognition_loop(
             # Extraction sur trame brute non inversée (alignée sur l'anatomie et le dataset LSFB)
             landmarks = extractor.extract_frame_landmarks(frame)
             prediction = engine.push_frame(landmarks)
+            sentence_snapshot = sentence_accumulator.push_prediction(prediction)
 
             # Inversion miroir uniquement pour le confort visuel d'affichage
             frame = cv2.flip(frame, 1)
             draw_skeleton_layer(frame, landmarks, is_mirrored=True)
             draw_hud_panel(frame, prediction, stream.fps)
+            draw_sentence_banner(frame, sentence_snapshot)
 
             cv2.imshow(window_name, frame)
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), ord("Q"), 27):  # 'q' ou touche Échap
                 break
+            if key in (ord("c"), ord("C")):  # Effacer la phrase en cours
+                sentence_accumulator.clear()
+            if key == 8:  # Touche Retour arrière (Backspace)
+                sentence_accumulator.pop_last()
     finally:
         cv2.destroyAllWindows()
 
