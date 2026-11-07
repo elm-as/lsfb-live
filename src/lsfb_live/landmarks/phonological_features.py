@@ -66,16 +66,14 @@ def _extract_local_hand_and_wrist(
 def compute_inter_hand_features(
     lw: np.ndarray,
     rw: np.ndarray,
-    unit_lh: np.ndarray,
-    unit_rh: np.ndarray,
+    landmarks_40_65_3: np.ndarray,
 ) -> np.ndarray:
-    """Calcule la distance et le vecteur relatif entre vrais poignets et vrais index (5 valeurs)."""
+    """Calcule la distance et le vecteur relatif entre vrais poignets et index (5 valeurs)."""
     wrist_disp = rw - lw
     wrist_dist = np.linalg.norm(wrist_disp, axis=-1, keepdims=True)
 
-    # Position des pointes d'index (indice 8) reconstruite proprement depuis les vrais poignets
-    l_index_xy = lw[:, :2] + unit_lh[:, 8, :2] * 0.22
-    r_index_xy = rw[:, :2] + unit_rh[:, 8, :2] * 0.22
+    l_index_xy = landmarks_40_65_3[:, 31, :2]
+    r_index_xy = landmarks_40_65_3[:, 52, :2]
     index_dist = np.linalg.norm(r_index_xy - l_index_xy, axis=-1, keepdims=True)
 
     return np.concatenate([wrist_dist, wrist_disp, index_dist], axis=-1).astype(np.float32)
@@ -148,7 +146,7 @@ def extract_phonological_features(normalized_sequence: np.ndarray) -> np.ndarray
     unit_lh, true_lw = _extract_local_hand_and_wrist(lh_seq, (0.36, 1.08))
     unit_rh, true_rw = _extract_local_hand_and_wrist(rh_seq, (-0.30, 1.08))
 
-    inter_hand = compute_inter_hand_features(true_lw, true_rw, unit_lh, unit_rh)  # 5
+    inter_hand = compute_inter_hand_features(true_lw, true_rw, reshaped)          # 5
     anchors = compute_body_anchor_features(true_lw, true_rw, reshaped)            # 6
     extensions = compute_finger_extension_features(unit_lh, unit_rh)              # 10
     kinematics = compute_kinematic_scalars(true_lw, true_rw)                      # 5
@@ -204,7 +202,7 @@ def assemble_bistream_features(positions: np.ndarray) -> np.ndarray:
 
     phono = np.concatenate(
         [
-            compute_inter_hand_features(true_lw, true_rw, unit_lh, unit_rh),
+            compute_inter_hand_features(true_lw, true_rw, reshaped),
             compute_body_anchor_features(true_lw, true_rw, reshaped),
             compute_finger_extension_features(unit_lh, unit_rh),
             compute_kinematic_scalars(true_lw, true_rw),

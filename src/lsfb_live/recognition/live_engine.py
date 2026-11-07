@@ -165,9 +165,9 @@ class LiveInferenceEngine:
 
         cutoff = now - self._window_duration
         recent = [item for item in self._history if item[0] >= cutoff]
-        if len(recent) < 6 and len(self._history) >= 6:
+        if len(recent) < 12 and len(self._history) >= 12:
             recent = list(self._history)[-12:]
-        if len(recent) < 6:
+        if len(recent) < 12:
             return None
 
         has_hands_recent = any(
