@@ -1,4 +1,4 @@
-"""Extraction des descripteurs géométriques, d'orientation palmaire et phonologiques LSFB."""
+"""Extraction des descripteurs géométriques, trajectoires multi-échelles et phonologie LSFB."""
 
 import numpy as np
 
@@ -6,26 +6,42 @@ PHONOLOGICAL_FEATURE_DIM = 26
 EPSILON = 1e-5
 
 
+def _interpolate_missing_frames_1d(values: np.ndarray, valid_mask: np.ndarray, default_val: float) -> np.ndarray:
+    """Interpole linéairement les trames manquantes entre trames valides sans saut au repos."""
+    if not np.any(valid_mask):
+        return np.full(len(values), default_val, dtype=np.float32)
+    if np.all(valid_mask):
+        return values.astype(np.float32)
+    indices = np.arange(len(values))
+    return np.interp(indices, indices[valid_mask], values[valid_mask]).astype(np.float32)
+
+
 def _extract_local_hand_and_wrist(
     hand_seq: np.ndarray,
     default_rest_xy: tuple[float, float],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Extrait la forme 3D locale des doigts normalisée par la paume et la trajectoire du poignet.
+    """Extrait la forme 3D locale des doigts centrée sur le poignet et la trajectoire continue.
 
-    En centrant chaque main sur son propre poignet (indice 0), on élimine :
-    1. Le décalage global du bras (95% de la variance parasite).
-    2. La corruption de la coordonnée Z par l'axe Z des épaules.
-    3. L'effet des mains absentes en webcam (qui s'annulent proprement à 0).
+    Élimine les artefacts d'interpolation aux frontières d'apparition de la main
+    et maintient la continuité de la trajectoire du poignet sans saut parasite.
     """
     total_frames = hand_seq.shape[0]
     local_hand = hand_seq - hand_seq[:, 0:1, :]
     palm_size = np.linalg.norm(local_hand[:, 9:10, :], axis=-1, keepdims=True)
-    valid_mask = palm_size[:, 0, 0] > 1e-4
+    palm_1d = palm_size[:, 0, 0]
 
-    safe_palm = np.where(palm_size > 1e-4, palm_size, 1.0)
-    unit_hand = np.where(palm_size > 1e-4, local_hand / safe_palm, 0.0).astype(np.float32)
+    # Filtrage des trames fantômes issues de l'interpolation entre main absente (0) et main présente
+    raw_valid = (palm_1d > 0.04) & (np.abs(hand_seq[:, 0, 0]) < 1.25) & (np.abs(hand_seq[:, 0, 1]) < 1.45)
+    if np.any(raw_valid):
+        median_palm = float(np.median(palm_1d[raw_valid]))
+        valid_mask = raw_valid & (palm_1d >= 0.45 * median_palm)
+    else:
+        valid_mask = np.zeros(total_frames, dtype=bool)
 
-    # Stockage du vecteur normal 3D de la paume dans le slot 0 (poignet local = 0)
+    safe_palm = np.where(valid_mask[:, np.newaxis, np.newaxis], np.maximum(palm_size, 1e-4), 1.0)
+    unit_hand = np.where(valid_mask[:, np.newaxis, np.newaxis], local_hand / safe_palm, 0.0).astype(np.float32)
+
+    # Vecteur normal unitaire 3D de la paume stocké dans l'indice 0
     v_index = unit_hand[:, 5, :]
     v_pinky = unit_hand[:, 17, :]
     palm_normal = np.cross(v_index, v_pinky)
@@ -33,25 +49,33 @@ def _extract_local_hand_and_wrist(
     unit_normal = np.where(normal_norm > EPSILON, palm_normal / np.maximum(normal_norm, EPSILON), 0.0)
     unit_hand[:, 0, :] = unit_normal.astype(np.float32)
 
-    # Trajectoire globale du poignet dans le repère des épaules (Z mis à 0 pour éviter le bruit)
+    # Continuité temporelle des doigts si la main s'occulte brièvement pendant un mouvement rapide
+    if np.any(valid_mask) and not np.all(valid_mask):
+        flat_hand = unit_hand.reshape(total_frames, -1)
+        for col in range(flat_hand.shape[1]):
+            flat_hand[:, col] = _interpolate_missing_frames_1d(flat_hand[:, col], valid_mask, 0.0)
+        unit_hand = flat_hand.reshape(total_frames, 21, 3)
+
+    # Trajectoire continue du poignet sans saut vers la position de repos en cours de geste
     true_wrist = np.zeros((total_frames, 3), dtype=np.float32)
-    true_wrist[:, 0] = np.where(valid_mask, hand_seq[:, 0, 0], default_rest_xy[0])
-    true_wrist[:, 1] = np.where(valid_mask, hand_seq[:, 0, 1], default_rest_xy[1])
+    true_wrist[:, 0] = _interpolate_missing_frames_1d(hand_seq[:, 0, 0], valid_mask, default_rest_xy[0])
+    true_wrist[:, 1] = _interpolate_missing_frames_1d(hand_seq[:, 0, 1], valid_mask, default_rest_xy[1])
     return unit_hand, true_wrist
 
 
 def compute_inter_hand_features(
     lw: np.ndarray,
     rw: np.ndarray,
-    landmarks_40_65_3: np.ndarray,
+    unit_lh: np.ndarray,
+    unit_rh: np.ndarray,
 ) -> np.ndarray:
-    """Calcule la distance et le vecteur relatif entre vrais poignets et index (5 valeurs)."""
+    """Calcule la distance et le vecteur relatif entre vrais poignets et vrais index (5 valeurs)."""
     wrist_disp = rw - lw
     wrist_dist = np.linalg.norm(wrist_disp, axis=-1, keepdims=True)
 
-    # Contact entre pointes des index gauche (31) et droit (52) en plan XY épaules (1 valeur)
-    l_index_xy = landmarks_40_65_3[:, 31, :2]
-    r_index_xy = landmarks_40_65_3[:, 52, :2]
+    # Position des pointes d'index (indice 8) reconstruite proprement depuis les vrais poignets
+    l_index_xy = lw[:, :2] + unit_lh[:, 8, :2] * 0.22
+    r_index_xy = rw[:, :2] + unit_rh[:, 8, :2] * 0.22
     index_dist = np.linalg.norm(r_index_xy - l_index_xy, axis=-1, keepdims=True)
 
     return np.concatenate([wrist_dist, wrist_disp, index_dist], axis=-1).astype(np.float32)
@@ -96,24 +120,20 @@ def compute_finger_extension_features(
 
 
 def compute_kinematic_scalars(lw: np.ndarray, rw: np.ndarray) -> np.ndarray:
-    """Calcule les grandeurs dynamiques scalaires : vitesse, accélération, divergence (5 valeurs)."""
-    total_frames = lw.shape[0]
+    """Calcule les déplacements directionnels cumulés depuis le début du signe (5 valeurs).
 
-    lw_vel = np.zeros((total_frames, 1), dtype=np.float32)
-    rw_vel = np.zeros((total_frames, 1), dtype=np.float32)
-    lw_vel[1:] = np.linalg.norm(lw[1:] - lw[:-1], axis=-1, keepdims=True)
-    rw_vel[1:] = np.linalg.norm(rw[1:] - rw[:-1], axis=-1, keepdims=True)
+    Encode explicitement la dynamique multi-frames (convergence RENCONTRER, divergence
+    DIFFERENT, descente ADORER/CORPS, montée MAISON).
+    """
+    # Déplacement directionnel signé (dX, dY) de chaque main depuis le début de la séquence
+    lw_disp_xy = lw[:, :2] - lw[0:1, :2]  # (T, 2)
+    rw_disp_xy = rw[:, :2] - rw[0:1, :2]  # (T, 2)
 
-    lw_acc = np.zeros((total_frames, 1), dtype=np.float32)
-    rw_acc = np.zeros((total_frames, 1), dtype=np.float32)
-    lw_acc[1:] = np.abs(lw_vel[1:] - lw_vel[:-1])
-    rw_acc[1:] = np.abs(rw_vel[1:] - rw_vel[:-1])
+    # Variation cumulée de l'écartement inter-mains depuis l'instant initial (convergence < 0, divergence > 0)
+    inter_dist = np.linalg.norm(rw[:, :2] - lw[:, :2], axis=-1, keepdims=True)
+    inter_delta = inter_dist - inter_dist[0:1, :]  # (T, 1)
 
-    inter_dist = np.linalg.norm(rw - lw, axis=-1, keepdims=True)
-    inter_speed = np.zeros((total_frames, 1), dtype=np.float32)
-    inter_speed[1:] = inter_dist[1:] - inter_dist[:-1]
-
-    return np.concatenate([lw_vel, rw_vel, lw_acc, rw_acc, inter_speed], axis=-1).astype(np.float32)
+    return np.concatenate([lw_disp_xy, rw_disp_xy, inter_delta], axis=-1).astype(np.float32)
 
 
 def extract_phonological_features(normalized_sequence: np.ndarray) -> np.ndarray:
@@ -128,23 +148,16 @@ def extract_phonological_features(normalized_sequence: np.ndarray) -> np.ndarray
     unit_lh, true_lw = _extract_local_hand_and_wrist(lh_seq, (0.36, 1.08))
     unit_rh, true_rw = _extract_local_hand_and_wrist(rh_seq, (-0.30, 1.08))
 
-    inter_hand = compute_inter_hand_features(true_lw, true_rw, reshaped)      # 5
-    anchors = compute_body_anchor_features(true_lw, true_rw, reshaped)        # 6
-    extensions = compute_finger_extension_features(unit_lh, unit_rh)          # 10
-    kinematics = compute_kinematic_scalars(true_lw, true_rw)                  # 5
+    inter_hand = compute_inter_hand_features(true_lw, true_rw, unit_lh, unit_rh)  # 5
+    anchors = compute_body_anchor_features(true_lw, true_rw, reshaped)            # 6
+    extensions = compute_finger_extension_features(unit_lh, unit_rh)              # 10
+    kinematics = compute_kinematic_scalars(true_lw, true_rw)                      # 5
 
     return np.concatenate([inter_hand, anchors, extensions, kinematics], axis=-1).astype(np.float32)
 
 
 def assemble_bistream_features(positions: np.ndarray) -> np.ndarray:
-    """Structure les repères en 3 flux : corps (138), mains centrées-poignet (252), phonologie (26).
-
-    Args:
-        positions: Séquence temporelle de positions normalisées de forme (T, 195).
-
-    Returns:
-        Tableau float32 de forme (T, 416) découplé pour le BiStreamMSSTClassifier.
-    """
+    """Structure les repères en 3 flux : corps + trajectoires (138), mains locales (252), phonologie (26)."""
     if positions.shape[-1] != 195:
         raise ValueError(f"Attendu 195 caractéristiques de position, reçu {positions.shape[-1]}")
 
@@ -155,29 +168,43 @@ def assemble_bistream_features(positions: np.ndarray) -> np.ndarray:
     lh_seq = reshaped[:, 23:44, :]
     rh_seq = reshaped[:, 44:65, :]
 
-    # 1. Extraction des formes de doigts 3D pures centrées sur leur propre poignet + normale paume
+    # 1. Extraction des formes de doigts 3D pures et trajectoires continues des poignets
     unit_lh, true_lw = _extract_local_hand_and_wrist(lh_seq, (0.36, 1.08))
     unit_rh, true_rw = _extract_local_hand_and_wrist(rh_seq, (-0.30, 1.08))
 
-    # 2. Ancrage des poignets du corps sur les vraies mains et atténuation du bruit Z monoculaire
+    # 2. Remplacement des repères bras/mains bruités de Pose (13..22) par la cinématique exacte :
+    # - 13, 14 : Coudes cinématiques reconstruits depuis épaules (11, 12) et vrais poignets
+    pose_seq[:, 13, :] = 0.5 * (pose_seq[:, 11, :] + true_lw)
+    pose_seq[:, 14, :] = 0.5 * (pose_seq[:, 12, :] + true_rw)
+    # - 15, 16 : Vrais poignets gauche et droit
     pose_seq[:, 15, :] = true_lw
     pose_seq[:, 16, :] = true_rw
-    pose_seq[:, :, 2] *= 0.15
+    # - 17, 18 : Déplacement cumulé des poignets depuis le début du signe (P(t) - P(0))
+    pose_seq[:, 17, :] = true_lw - true_lw[0:1, :]
+    pose_seq[:, 18, :] = true_rw - true_rw[0:1, :]
+    # - 19, 20 : Déplacement à moyen terme sur fenêtre de 8 trames (P(t) - P(t-8))
+    lag_idx = np.maximum(0, np.arange(total_frames) - 8)
+    pose_seq[:, 19, :] = true_lw - true_lw[lag_idx, :]
+    pose_seq[:, 20, :] = true_rw - true_rw[lag_idx, :]
+    # - 21, 22 : Pointes des index dans le repère global des épaules
+    pose_seq[:, 21, :] = true_lw + unit_lh[:, 8, :] * 0.22
+    pose_seq[:, 22, :] = true_rw + unit_rh[:, 8, :] * 0.22
+    pose_seq[:, :13, 2] *= 0.15
 
     body_pos = pose_seq.reshape(total_frames, 69)
-    body_vel = np.zeros_like(body_pos)
-    body_vel[1:] = body_pos[1:] - body_pos[:-1]
+    # Vitesse lissée sur 3 trames pour amplifier le vrai mouvement par rapport au bruit trame-à-trame
+    vel_lag = np.maximum(0, np.arange(total_frames) - 3)
+    body_vel = (body_pos - body_pos[vel_lag, :]).astype(np.float32)
 
     hands_pos = np.concatenate(
         [unit_lh.reshape(total_frames, 63), unit_rh.reshape(total_frames, 63)],
         axis=-1,
     )
-    hands_vel = np.zeros_like(hands_pos)
-    hands_vel[1:] = hands_pos[1:] - hands_pos[:-1]
+    hands_vel = (hands_pos - hands_pos[vel_lag, :]).astype(np.float32)
 
     phono = np.concatenate(
         [
-            compute_inter_hand_features(true_lw, true_rw, reshaped),
+            compute_inter_hand_features(true_lw, true_rw, unit_lh, unit_rh),
             compute_body_anchor_features(true_lw, true_rw, reshaped),
             compute_finger_extension_features(unit_lh, unit_rh),
             compute_kinematic_scalars(true_lw, true_rw),

@@ -1,4 +1,4 @@
-"""Moteur d'inférence en direct par fenêtre glissante et lissage temporel."""
+"""Moteur d'inférence en direct multi-échelles temporelles avec découpage d'onset gestuel."""
 
 from collections import deque
 from dataclasses import dataclass
@@ -12,7 +12,6 @@ import torch.nn.functional as F
 
 from lsfb_live.capture.holistic_extractor import FrameLandmarks
 from lsfb_live.landmarks import (
-    TARGET_SEQUENCE_LENGTH,
     assemble_bistream_features,
     transform_enriched_landmarks_pipeline,
     transform_landmarks_pipeline,
@@ -43,16 +42,64 @@ class SignPrediction:
     is_active_sign: bool
 
 
-class LiveInferenceEngine:
-    """Orchestre la fenêtre temporelle glissante et l'inférence du réseau de neurones.
+def _trim_active_gesture_frames(
+    recent: list[tuple[float, np.ndarray, np.ndarray, np.ndarray]],
+) -> list[tuple[float, np.ndarray, np.ndarray, np.ndarray]]:
+    """Découpe la fenêtre temporelle dès l'entrée effective des mains dans le champ.
 
-    Args:
-        model_path: Fichier des poids PyTorch (.pt).
-        mapping_path: Fichier JSON contenant class_to_sign.
-        model_type: 'bigru' ou 'transformer'.
-        window_size: Nombre de trames conservées dans la mémoire glissante (40).
-        confidence_threshold: Seuil minimal de confiance pour valider un signe (0.45).
+    Pour un signe bimanuel (ex: RENCONTRER, ADORER, DIFFERENT), aligne la trame 0
+    sur l'instant où les deux mains sont apparues afin de capturer 100% du déplacement.
     """
+    active = [item for item in recent if not np.all(item[2] == 0) or not np.all(item[3] == 0)]
+    if len(active) < 5:
+        return recent
+
+    # Si l'utilisateur signe actuellement à 2 mains, on cale le début sur l'apparition des 2 mains
+    both_hands_now = sum(
+        (not np.all(item[2] == 0) and not np.all(item[3] == 0))
+        for item in active[-3:]
+    ) >= 2
+    if both_hands_now:
+        for idx, item in enumerate(active):
+            if not np.all(item[2] == 0) and not np.all(item[3] == 0):
+                if len(active) - idx >= 5:
+                    return active[idx:]
+                break
+    return active
+
+
+def _extract_motion_core_frames(
+    active: list[tuple[float, np.ndarray, np.ndarray, np.ndarray]],
+) -> Optional[list[tuple[float, np.ndarray, np.ndarray, np.ndarray]]]:
+    """Isole la phase de mouvement actif en retirant le maintien immobile final.
+
+    Lorsqu'un signeur exécute un signe à déplacement (ex: RENCONTRER, ADORER) puis
+    garde les mains immobiles pour lire l'écran, cette fonction récupère l'arc
+    cinématique complet [départ -> mouvement -> arrivée] avant l'immobilisation.
+    """
+    if len(active) < 9:
+        return None
+
+    end_idx = len(active)
+    while end_idx > 6:
+        curr = active[end_idx - 1]
+        prev = active[end_idx - 2]
+        dl = float(np.linalg.norm(curr[2][0, :2] - prev[2][0, :2])) if not np.all(curr[2] == 0) else 0.0
+        dr = float(np.linalg.norm(curr[3][0, :2] - prev[3][0, :2])) if not np.all(curr[3] == 0) else 0.0
+        if max(dl, dr) < 0.012:
+            end_idx -= 1
+        else:
+            break
+
+    # On conserve 2 trames de la pose finale pour stabiliser l'arrivée du geste
+    trimmed_end = min(len(active), end_idx + 2)
+    if trimmed_end < len(active) - 1 and trimmed_end >= 6:
+        return active[:trimmed_end]
+    return None
+
+
+class LiveInferenceEngine:
+    """Orchestre la fenêtre temporelle bi-échelle et l'inférence du réseau de neurones."""
 
     def __init__(
         self,
@@ -90,74 +137,68 @@ class LiveInferenceEngine:
 
         self._window_size = window_size
         self._threshold = confidence_threshold
-        self._window_duration = 1.3  # Durée canonique d'un signe en secondes
+        self._window_duration = 1.65  # Fenêtre élargie pour capter les déplacements complets à 10 FPS
 
         self._history: deque[tuple[float, np.ndarray, np.ndarray, np.ndarray]] = deque(maxlen=120)
         self._smoothed_probs: Optional[np.ndarray] = None
 
+    def _encode_window(
+        self,
+        frames: list[tuple[float, np.ndarray, np.ndarray, np.ndarray]],
+    ) -> np.ndarray:
+        """Transforme une sous-fenêtre de trames en tenseur de caractéristiques (40, D)."""
+        pose_seq = np.array([item[1] for item in frames])
+        lh_seq = np.array([item[2] for item in frames])
+        rh_seq = np.array([item[3] for item in frames])
+
+        if self._model_type == "bistream":
+            positions = transform_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
+            return assemble_bistream_features(positions)
+        if self._use_velocity:
+            return transform_enriched_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
+        return transform_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
+
     def push_frame(self, frame_landmarks: FrameLandmarks) -> Optional[SignPrediction]:
-        """Ajoute une trame de repères au buffer et calcule la prédiction si assez d'historique.
-
-        Args:
-            frame_landmarks: Repères extraits de la trame courante.
-
-        Returns:
-            SignPrediction ou None si le buffer contient moins de trames significatives.
-        """
+        """Ajoute une trame au buffer et évalue le geste à double échelle temporelle."""
         now = time.time()
         self._history.append((now, frame_landmarks.pose, frame_landmarks.left_hand, frame_landmarks.right_hand))
 
-        # Fenêtre temporelle glissante invariante au framerate (dernières 1.3 secondes)
         cutoff = now - self._window_duration
         recent = [item for item in self._history if item[0] >= cutoff]
-
-        # Minimum de trames pour interpoler un geste
-        if len(recent) < 12:
+        if len(recent) < 6 and len(self._history) >= 6:
+            recent = list(self._history)[-12:]
+        if len(recent) < 6:
             return None
 
-        # Si aucune main n'est visible sur les dernières trames, repos
         has_hands_recent = any(
             not np.all(item[2] == 0) or not np.all(item[3] == 0)
             for item in recent[-4:]
         )
         if not has_hands_recent:
             self._smoothed_probs = None
-            return SignPrediction(sign="En attente...", confidence=0.0, top5=[], is_active_sign=False)
+            return SignPrediction(sign="[Repos]", confidence=0.0, top5=[], is_active_sign=False)
 
-        pose_seq = np.array([item[1] for item in recent])
-        lh_seq = np.array([item[2] for item in recent])
-        rh_seq = np.array([item[3] for item in recent])
+        active_frames = _trim_active_gesture_frames(recent)
 
-        # Détection d'inactivité : poignets et pointes d'index immobiles
-        wrist_motion = (
-            np.sum(np.abs(np.diff(pose_seq[:, 15, :2], axis=0)))
-            + np.sum(np.abs(np.diff(pose_seq[:, 16, :2], axis=0)))
-            + np.sum(np.abs(np.diff(lh_seq[:, 8, :2], axis=0)))
-            + np.sum(np.abs(np.diff(rh_seq[:, 8, :2], axis=0)))
-        )
-        if wrist_motion < 0.03:
-            return SignPrediction(sign="En attente d'un geste...", confidence=0.0, top5=[], is_active_sign=False)
+        # Évaluation tri-échelle : trajectoire complète + cœur de mouvement (sans maintien final) + fenêtre courte
+        windows = [self._encode_window(active_frames)]
+        motion_core = _extract_motion_core_frames(active_frames)
+        if motion_core is not None:
+            windows.append(self._encode_window(motion_core))
+        if len(active_frames) >= 11:
+            short_len = max(6, int(len(active_frames) * 0.60))
+            windows.append(self._encode_window(active_frames[-short_len:]))
 
-        # Utilisation stricte de la chaîne de normalisation partagée train/live
-        if self._model_type == "bistream":
-            positions = transform_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
-            features = assemble_bistream_features(positions)
-        elif self._use_velocity:
-            features = transform_enriched_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
-        else:
-            features = transform_landmarks_pipeline(pose_seq, lh_seq, rh_seq)
-
-        tensor_x = torch.from_numpy(features).unsqueeze(0).float()  # (1, 40, input_dim)
-
+        tensor_batch = torch.from_numpy(np.stack(windows, axis=0)).float()
         with torch.no_grad():
-            logits = self._model(tensor_x)
-            probabilities = F.softmax(logits, dim=1).squeeze(0).numpy()
+            logits = self._model(tensor_batch)
+            probs_batch = F.softmax(logits, dim=1).numpy()
+            probabilities = np.max(probs_batch, axis=0)
 
-        # Lissage exponentiel des probabilités (alpha = 0.4)
         if self._smoothed_probs is None:
             self._smoothed_probs = probabilities
         else:
-            self._smoothed_probs = 0.6 * self._smoothed_probs + 0.4 * probabilities
+            self._smoothed_probs = 0.50 * self._smoothed_probs + 0.50 * probabilities
 
         top_indices = np.argsort(self._smoothed_probs)[::-1][:5]
         top5 = [(self._class_to_sign[idx], float(self._smoothed_probs[idx])) for idx in top_indices]
@@ -171,4 +212,3 @@ class LiveInferenceEngine:
             top5=top5,
             is_active_sign=is_active,
         )
-

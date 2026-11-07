@@ -59,18 +59,27 @@ def apply_handedness_mirror(sequence: np.ndarray) -> np.ndarray:
     return mirrored_channels[0].astype(np.float32)
 
 
+def _resample_40_frames(seq: np.ndarray) -> np.ndarray:
+    """Rééchantillonne un sous-segment temporel (F, D) vers 40 trames par interpolation linéaire."""
+    cur_len = len(seq)
+    if cur_len == 40:
+        return seq
+    src_t = np.linspace(0.0, 1.0, num=cur_len)
+    dst_t = np.linspace(0.0, 1.0, num=40)
+    out = np.empty((40, seq.shape[1]), dtype=np.float32)
+    for col in range(seq.shape[1]):
+        out[:, col] = np.interp(dst_t, src_t, seq[:, col])
+    return out
+
+
 def apply_training_augmentation(
     sequence: np.ndarray,
-    noise_std: float = 0.01,
+    noise_std: float = 0.008,
 ) -> np.ndarray:
-    """Applique des augmentations (symétrie miroir, bruit gaussien, jitter d'échelle).
+    """Applique des augmentations spatiales et temporelles (maintien final, vitesse, miroir).
 
-    Args:
-        sequence: Tableau float32 de forme (40, 195) ou (40, 390).
-        noise_std: Écart-type du bruit gaussien ajouté.
-
-    Returns:
-        Nouvelle séquence augmentée.
+    Simule fidèlement le comportement d'un utilisateur face webcam qui démarre un signe
+    à vitesse variable puis maintient la posture finale en regardant l'écran.
     """
     augmented = sequence.copy()
 
@@ -78,15 +87,23 @@ def apply_training_augmentation(
     if np.random.rand() > 0.5:
         augmented = apply_handedness_mirror(augmented)
 
-    # 2. Jitter d'échelle et bruit additif
-    scale_jitter = np.random.uniform(0.95, 1.05)
+    # 2. Augmentation temporelle : maintien de la posture finale (End-Hold) ou sous-fenêtre
+    r_temp = np.random.rand()
+    if r_temp < 0.30 and len(augmented) == 40:
+        # Maintien de la posture finale (6 à 14 trames) lorsque le signeur observe le résultat
+        hold_len = np.random.randint(6, 15)
+        hold_frames = np.repeat(augmented[-2:-1, :], hold_len, axis=0)
+        augmented = _resample_40_frames(np.concatenate([augmented, hold_frames], axis=0))
+    elif r_temp < 0.55 and len(augmented) == 40:
+        # Sous-fenêtre temporelle (vitesse d'exécution plus rapide ou décalage de fenêtre)
+        start_idx = np.random.randint(0, 6)
+        end_idx = np.random.randint(33, 40)
+        augmented = _resample_40_frames(augmented[start_idx:end_idx])
+
+    # 3. Jitter d'échelle et bruit additif léger
+    scale_jitter = np.random.uniform(0.94, 1.06)
     noise = np.random.normal(0.0, noise_std, size=augmented.shape).astype(np.float32)
     augmented = (augmented * scale_jitter) + noise
-
-    # 3. Masquage temporel (Cutout) aléatoire pour forcer la robustesse aux pertes d'images
-    if np.random.rand() < 0.35 and len(augmented) > 10:
-        start_t = np.random.randint(5, len(augmented) - 5)
-        augmented[start_t : start_t + 2, :] = 0.0
 
     return augmented.astype(np.float32)
 

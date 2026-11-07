@@ -151,3 +151,4 @@ class GlossSentenceAccumulator:
             candidate_sign=self._current_candidate,
             stability_ratio=ratio,
         )
+

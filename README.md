@@ -5,8 +5,9 @@
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.15%20(CPU)-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-1.2.2%20(BlazePalm%20VIDEO)-0072B2?style=for-the-badge&logo=google&logoColor=white)](https://developers.google.com/mediapipe)
-[![Top-1 Accuracy](https://img.shields.io/badge/Top--1%20Accuracy-80.47%25%20(v1.4)-brightgreen?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Top-5 Accuracy](https://img.shields.io/badge/Top--5%20Accuracy-95.84%25%20(v1.4)-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Top-1 Accuracy](https://img.shields.io/badge/Top--1%20Accuracy-81.07%25%20(v1.5)-brightgreen?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Top-5 Accuracy](https://img.shields.io/badge/Top--5%20Accuracy-95.75%25%20(v1.5)-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Balanced Accuracy](https://img.shields.io/badge/Balanced%20Accuracy-80.52%25%20(v1.5)-blue?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 [![Architecture](https://img.shields.io/badge/Architecture-BiStream--MSST%20(416%20dims)-purple?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 [![Tests](https://img.shields.io/badge/Tests-29%20Passing-brightgreen?style=for-the-badge)](#5-architecture-du-projet)
 
@@ -145,25 +146,25 @@ Le passage de 100 à 250 classes multiplie la combinatoire par 2,5 et densifie f
 | **v1.1** | MSST-Transformer | 100 | 390 (Pos + Vel) | 54,46% | 83,23% | 54,23% | 1,7647 |
 | **v1.2** | MSST-Transformer | 250 | 390 (Pos + Vel) | 39,68% | 70,67% | 41,64% | 2,5521 |
 | **v1.3** | BiStream-MSST (Phonologique) | 250 | 416 (Corps + Mains + Phono) | 37,75% | 69,28% | 39,11% | 2,6497 |
-| **v1.4** | **BiStream-MSST (Doigts Centrés-Poignet + Normale Paume)** | **30 (Core Lexical)** | **416 (Local Hands + Phono)** | **80,47%** | **95,84%** | **78,93%** | **0,8631** |
+| **v1.4** | BiStream-MSST (Doigts Centrés-Poignet + Normale Paume) | 30 (Core Lexical) | 416 (Local Hands + Phono) | 80,47% | 95,84% | 78,93% | 0,8631 |
+| **v1.5** | **BiStream-MSST (Trajectoires Cumulées $\Delta P$ + Cœur Cinématique)** | **30 (Core Lexical)** | **416 (Multi-Horizon + Local Hands)** | **81,07%** | **95,75%** | **80,52%** | **0,8498** |
 
-> **Constat majeur (v1.4) :** En découplant la morphologie intrinsèque des doigts de la position globale du bras (repère local centré sur chaque poignet + vecteur normal 3D de la paume), le modèle franchit le cap des **80,47% en Top-1** et **95,84% en Top-5** sur **4 828 séquences de test** issues de 40 signeurs jamais vus à l'entraînement.
+> **Constat majeur (v1.5) :** En combinant le repère local des doigts centré sur le poignet avec des **vecteurs de déplacement cumulés multi-horizons ($\Delta P(t) = P(t) - P(0)$ et $\Delta P_8(t) = P(t) - P(t-8)$)** et une interpolation continue sans saut des poignets, le modèle franchit **81,07% en Top-1**, **95,75% en Top-5** et **80,52% en Balanced Accuracy** sur **4 828 séquences de test** (40 signeurs non vus), avec un rappel minimal de **59,8%** sur le signe le plus difficile.
 
-### Apports méthodologiques clés (v1.3 & v1.4 BiStream-MSST) :
+### Apports méthodologiques clés (v1.4 & v1.5 BiStream-MSST) :
 1. **Détection dédiée des doigts (`HandLandmarker` BlazePalm en mode `VIDEO`) :** En remplacement de `HolisticLandmarker` (qui perdait les mains dès que les coudes sortaient du bas de l'écran d'un ordinateur portable), l'extracteur temps réel combine désormais le détecteur dédié `HandLandmarker` (21 repères 3D par main, seuil 0,30, suivi inter-trames `VIDEO` à 28,3 FPS) et `PoseLandmarker` sur l'image brute non inversée.
-2. **Coordonnées locales des doigts centrées sur le poignet (Wrist-Centric Hand-Local) :** Pour chacune des deux mains, les 20 phalanges sont exprimées relativement à leur propre poignet et mises à l'échelle par la longueur de la paume $\|P_9 - P_0\|_2$, tandis que l'emplacement du poignet encode le vecteur normal unitaire 3D de la paume ($\vec{v}_{0\to 5} \times \vec{v}_{0\to 17}$). Ce changement de repère élimine la dérive de profondeur $Z$ des épaules et rend la forme des doigts invariante à la posture du bras.
-3. **Architecture Bi-Stream à 416 entrées :** Découplage strict entre la macro-dynamique corporelle (138 features : haut du corps positions + vitesses) et les micro-configurations manuelles (252 features : 42 repères mains locales + vitesses traitées par convolutions multi-échelles $k=3, 5, 7$).
-4. **Descripteurs géométriques phonologiques (26 scalaires) :** Encodage explicite des paramètres de la linguistique des signes (distances et vecteurs 3D inter-mains sur les vrais poignets des mains, points de contact des index, ancrages corporels nez/torse/épaules, extension des 10 doigts normalisée par la paume et vitesses/accélérations relatives).
+2. **Coordonnées locales des doigts centrées sur le poignet (Wrist-Centric Hand-Local) :** Pour chacune des deux mains, les 20 phalanges sont exprimées relativement à leur propre poignet et mises à l'échelle par la longueur de la paume $\|P_9 - P_0\|_2$, tandis que l'emplacement du poignet encode le vecteur normal unitaire 3D de la paume ($\vec{v}_{0\to 5} \times \vec{v}_{0\to 17}$).
+3. **Trajectoires multi-frames sans saut et découpage du maintien final (v1.5) :** Suppression des trames fantômes d'interpolation aux frontières d'apparition des mains, encodage explicite des déplacements directionnels cumulés depuis le début du geste ($\Delta X, \Delta Y$, convergence/divergence inter-mains) et extraction tri-échelle en direct (fenêtre complète 1,65 s + cœur cinématique hors maintien final + fenêtre courte).
 
-### Analyse qualitative par signe (BiStream v1.4 sur 40 signeurs non vus)
+### Analyse qualitative par signe (BiStream v1.5 sur 40 signeurs non vus)
 
 ```
-Signes les mieux reconnus (> 91%) :
-  1. ADORER         [======================================= ] 98.6%  (69 exemples)
-  2. CONVENIR       [======================================  ] 96.4%  (56 exemples)
-  3. DIFFERENT      [======================================  ] 95.0%  (322 exemples)
-  4. CORPS          [=====================================   ] 92.7%  (41 exemples)
-  5. RENCONTRER     [====================================    ] 91.5%  (117 exemples)
+Signes à déplacement les mieux reconnus (> 92%) :
+  1. ADORER         [========================================] 100.0%  (69 exemples)
+  2. CONVENIR       [======================================  ]  96.4%  (56 exemples)
+  3. DIFFERENT      [======================================  ]  95.0%  (322 exemples)
+  4. CORPS          [=====================================   ]  92.7%  (41 exemples)
+  5. INTERPRETE     [=====================================   ]  92.7%  (123 exemples)
 ```
 
 ---

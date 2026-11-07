@@ -51,3 +51,4 @@ def test_sentence_accumulator_requires_stability_and_deduplicates() -> None:
     assert snap.glosses == ("PAPA",)
     snap = acc.clear()
     assert snap.glosses == ()
+
