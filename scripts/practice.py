@@ -90,11 +90,13 @@ def run_coach_session(
             if not success:
                 break
 
-            webcam_frame = cv2.flip(webcam_frame, 1)
+            # Extraction sur trame brute non inversée (alignée sur l'anatomie et le dataset LSFB)
             landmarks = extractor.extract_frame_landmarks(webcam_frame)
             prediction = engine.push_frame(landmarks)
 
-            draw_skeleton_layer(webcam_frame, landmarks)
+            # Inversion miroir uniquement pour le confort visuel d'affichage
+            webcam_frame = cv2.flip(webcam_frame, 1)
+            draw_skeleton_layer(webcam_frame, landmarks, is_mirrored=True)
             draw_hud_panel(webcam_frame, prediction, stream.fps)
 
             # Rendu de l'avatar paramétrique cinématique (100% miroir et fluide)

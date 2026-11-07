@@ -128,12 +128,14 @@ class LiveInferenceEngine:
         lh_seq = np.array([item[2] for item in recent])
         rh_seq = np.array([item[3] for item in recent])
 
-        # Détection d'inactivité : poignets immobiles
+        # Détection d'inactivité : poignets et pointes d'index immobiles
         wrist_motion = (
             np.sum(np.abs(np.diff(pose_seq[:, 15, :2], axis=0)))
             + np.sum(np.abs(np.diff(pose_seq[:, 16, :2], axis=0)))
+            + np.sum(np.abs(np.diff(lh_seq[:, 8, :2], axis=0)))
+            + np.sum(np.abs(np.diff(rh_seq[:, 8, :2], axis=0)))
         )
-        if wrist_motion < 0.04:
+        if wrist_motion < 0.03:
             return SignPrediction(sign="En attente d'un geste...", confidence=0.0, top5=[], is_active_sign=False)
 
         # Utilisation stricte de la chaîne de normalisation partagée train/live

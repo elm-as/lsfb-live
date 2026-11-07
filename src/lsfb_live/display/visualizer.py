@@ -16,39 +16,43 @@ POSE_CONNECTIONS = [
     (14, 16),  # Coude droit - Poignet droit
 ]
 
-# Connexions des 5 doigts de la main (vers le poignet 0 et entre phalanges)
+# Connexions des 5 doigts et de la paume de la main (21 repères)
 HAND_CONNECTIONS = [
     (0, 1), (1, 2), (2, 3), (3, 4),        # Pouce
     (0, 5), (5, 6), (6, 7), (7, 8),        # Index
     (0, 9), (9, 10), (10, 11), (11, 12),   # Majeur
     (0, 13), (13, 14), (14, 15), (15, 16), # Annulaire
     (0, 17), (17, 18), (18, 19), (19, 20), # Auriculaire
+    (5, 9), (9, 13), (13, 17),             # Arc métacarpien de la paume
 ]
+FINGERTIP_INDICES = {4, 8, 12, 16, 20}
 
 
 def draw_skeleton_layer(
     frame: np.ndarray,
     landmarks: FrameLandmarks,
+    is_mirrored: bool = True,
 ) -> None:
-    """Trace les os et articulations du corps et des mains sur l'image courante."""
+    """Trace les os et articulations du corps et des mains sur l'image d'affichage."""
     height, width = frame.shape[:2]
 
     def to_pixel(coords: np.ndarray, idx: int) -> tuple[int, int]:
-        return int(coords[idx, 0] * width), int(coords[idx, 1] * height)
+        x_norm = (1.0 - coords[idx, 0]) if is_mirrored else coords[idx, 0]
+        return int(x_norm * width), int(coords[idx, 1] * height)
 
     # 1. Tracé du torse supérieur
     if landmarks.has_pose:
         for p1, p2 in POSE_CONNECTIONS:
             pt1 = to_pixel(landmarks.pose, p1)
             pt2 = to_pixel(landmarks.pose, p2)
-            cv2.line(frame, pt1, pt2, (200, 200, 200), 2, cv2.LINE_AA)
+            cv2.line(frame, pt1, pt2, (190, 190, 190), 2, cv2.LINE_AA)
         for idx in [11, 12, 13, 14, 15, 16]:
             cv2.circle(frame, to_pixel(landmarks.pose, idx), 4, (0, 180, 255), -1, cv2.LINE_AA)
 
-    # 2. Tracé des mains (gauche: cyan, droite: vert)
+    # 2. Tracé haute précision des mains (gauche: cyan, droite: vert émeraude)
     hands_specs = [
         (landmarks.left_hand, (255, 200, 0)),
-        (landmarks.right_hand, (0, 255, 160)),
+        (landmarks.right_hand, (0, 255, 140)),
     ]
     for hand_coords, color in hands_specs:
         if np.all(hand_coords == 0):
@@ -58,7 +62,9 @@ def draw_skeleton_layer(
             pt2 = to_pixel(hand_coords, p2)
             cv2.line(frame, pt1, pt2, color, 2, cv2.LINE_AA)
         for idx in range(21):
-            cv2.circle(frame, to_pixel(hand_coords, idx), 3, (255, 255, 255), -1, cv2.LINE_AA)
+            radius = 5 if idx in FINGERTIP_INDICES else 3
+            pt_color = (60, 255, 255) if idx in FINGERTIP_INDICES else (255, 255, 255)
+            cv2.circle(frame, to_pixel(hand_coords, idx), radius, pt_color, -1, cv2.LINE_AA)
 
 
 def draw_hud_panel(

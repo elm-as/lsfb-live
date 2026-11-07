@@ -63,13 +63,13 @@ def run_live_recognition_loop(
             if not success:
                 break
 
-            # Inversion miroir pour une expérience naturelle face webcam
-            frame = cv2.flip(frame, 1)
-
+            # Extraction sur trame brute non inversée (alignée sur l'anatomie et le dataset LSFB)
             landmarks = extractor.extract_frame_landmarks(frame)
             prediction = engine.push_frame(landmarks)
 
-            draw_skeleton_layer(frame, landmarks)
+            # Inversion miroir uniquement pour le confort visuel d'affichage
+            frame = cv2.flip(frame, 1)
+            draw_skeleton_layer(frame, landmarks, is_mirrored=True)
             draw_hud_panel(frame, prediction, stream.fps)
 
             cv2.imshow(window_name, frame)

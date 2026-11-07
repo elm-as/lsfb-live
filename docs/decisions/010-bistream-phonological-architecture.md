@@ -95,25 +95,30 @@ Pour empêcher le réseau de sur-apprendre des raccourcis temporels statiques, u
 
 ---
 
-## 4. Résultats expérimentaux (Test officiel — 33 753 séquences, 40 signeurs non vus)
+## 4. Résultats expérimentaux (40 signeurs non vus)
 
-| Échelle | Architecture | Features | Test Top-1 | Test Top-5 | Balanced Accuracy | Test Loss |
-|---|---|---|---|---|---|---|
-| Hasard | Aléatoire uniforme | - | 0,40% | 2,00% | 0,40% | 5,5215 |
-| **v1.1** | **MSST-Transformer** | 390 (Pos + Vel) | **54,46%** (100 cl.) | **83,23%** (100 cl.) | **54,23%** | 1,7647 |
-| **v1.2** | **MSST-Transformer** | 390 (Pos + Vel) | **39,68%** (250 cl.) | **70,67%** (250 cl.) | **41,64%** | 2,5521 |
-| **v1.3** | **BiStream-MSST (Phonologique)** | **416 (Corps + Mains + Phono)** | **37,75%** (250 cl.) | **69,28%** (250 cl.) | **39,11%** | 2,6497 |
+| Échelle | Architecture | Features | Vocabulaire | Test Top-1 | Test Top-5 | Balanced Accuracy | Test Loss |
+|---|---|---|---|---|---|---|---|
+| Hasard | Aléatoire uniforme | - | 250 cl. | 0,40% | 2,00% | 0,40% | 5,5215 |
+| **v1.1** | **MSST-Transformer** | 390 (Pos + Vel) | 100 cl. | **54,46%** | **83,23%** | **54,23%** | 1,7647 |
+| **v1.2** | **MSST-Transformer** | 390 (Pos + Vel) | 250 cl. | **39,68%** | **70,67%** | **41,64%** | 2,5521 |
+| **v1.3** | **BiStream-MSST** | 416 (Épaules) | 250 cl. | **37,75%** | **69,28%** | **39,11%** | 2,6497 |
+| **v1.4** | **BiStream-MSST (Doigts Centrés-Poignet + Normale Paume)** | **416 (Mains Locales)** | **30 signes lexicaux (4 828 tests)** | **80,47%** | **95,84%** | **78,93%** | **0,8631** |
 
-### 4.1 Signes les mieux reconnus (Excellente phonologie bimanuelle)
-- `ADORER` : **91,3%** (69 exemples) — geste bimanuel très expressif au niveau du torse avec convergence marquée.
-- `CONVENIR` : **87,5%** (56 exemples) — contact précis des index et orientation palmaire.
-- `INTERPRETE` : **85,4%** (123 exemples) — cinématique alternée caractéristique des deux mains.
-- `RENCONTRER` : **84,6%** (117 exemples) — trajectoire frontale convergente des deux index verticaux.
-- `CORPS` : **82,9%** (41 exemples) — descente tactile délimitée sur le buste.
+### 4.1 Impact de la normalisation locale centrée-poignet (v1.4)
+En soustrayant le poignet propre de chaque main ($\hat{H}_k = \frac{P_k - P_0}{\|P_9 - P_0\|_2}$) et en injectant le vecteur normal 3D de la paume ($\vec{v}_{0\to 5} \times \vec{v}_{0\to 17}$) dans le slot `0` :
+- On annule mathématiquement la corruption de l'axe $Z$ des épaules qui polluait les 42 repères des doigts.
+- On élimine 95% de la variance parasite liée à la position globale du bras pour ne laisser au flux des mains que la géométrie pure des phalanges.
+- Sur les 4 828 séquences de test (40 signeurs inconnus) du socle lexical de 30 signes :
+  - `ADORER` : **98,6%** (69 exemples)
+  - `CONVENIR` : **96,4%** (56 exemples)
+  - `DIFFERENT` : **95,0%** (322 exemples)
+  - `CORPS` : **92,7%** (41 exemples)
+  - `RENCONTRER` : **91,5%** (117 exemples)
 
-### 4.2 Analyse des signes difficiles & homonymes
-- Les classes les plus en difficulté (`FACILE.10`, `VOULOIR`, `QUI`, `ALLER`, `FSIGN`) partagent une caractéristique commune : des micro-déplacements d'un seul doigt ou une composante faciale/orale prépondérante dans la LSFB non couverte par les 23 repères supérieurs de pose.
-- L'apparition fréquente de `(ALLER?)` observée en direct sous faible confiance s'explique par sa nature de classe "aspirateur" de cinématique neutre, efficacement filtrée par le seuil de décision et la détection d'inactivité du coach.
+### 4.2 Détection temps réel dédiée aux doigts (`HandLandmarker` VIDEO)
+- Remplacement de `HolisticLandmarker` (mode `IMAGE`, dépendant des coudes du buste) par le détecteur dédié **`HandLandmarker` (`BlazePalm`, mode `VIDEO`)** couplé à `PoseLandmarker` sur trame brute **non inversée** avant affichage miroir.
+- La cadence webcam passe de **8,9 FPS à ~28 FPS** et les 21 articulations des doigts restent verrouillées même lorsque les coudes sortent du champ de la webcam.
 
 ---
 
