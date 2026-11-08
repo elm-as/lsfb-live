@@ -166,3 +166,4 @@ def render_rig_mannequin_cv(
             _draw_articulated_hand_3d(canvas, data, (yaw_rad, viewport, True))
         elif kind == "hand_r":
             _draw_articulated_hand_3d(canvas, data, (yaw_rad, viewport, False))
+

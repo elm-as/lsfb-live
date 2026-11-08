@@ -15,6 +15,7 @@ import numpy as np
 from lsfb_live.avatar.rig_skeleton import retarget_frame_landmarks_to_rig
 from lsfb_live.avatar.text_to_sign_sequencer import (
     SignSequenceTimeline,
+    get_prototype_model_confidence,
     get_sign_rig_at_progress,
     parse_french_to_lsfb_glosses,
 )
@@ -139,10 +140,11 @@ def run_coach_session(
                 progress = float(step_counter % cycle_steps) / float(cycle_steps)
                 step_counter += 1
                 rig_state = get_sign_rig_at_progress(sign_name, progress)
+                rig_conf = get_prototype_model_confidence(sign_name) * 100.0
                 render_rig_mannequin_cv(ref_canvas, rig_state, yaw_deg=yaw_deg)
                 build_coach_reference_card(
                     ref_canvas,
-                    f"{sign_name}  ({yaw_deg:+.0f} deg)",
+                    f"{sign_name}  [Rig reconnu a {rig_conf:.1f}%]",
                     str(active_sign_spec["description"]),
                     progress,
                     is_bimanual=is_bimanual,

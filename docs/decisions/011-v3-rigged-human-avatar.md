@@ -35,3 +35,4 @@ Conformément à la charte **ElmasCore**, j'ai créé le domaine métier dédié
 4. **Double Moteur de Rendu 3D (Hybride OpenCV + Three.js WebGL) :**
    - **OpenCV Volumétrique ([`rig_renderer_cv.py`](../../src/lsfb_live/display/rig_renderer_cv.py)) :** Projection perspective avec rotation orbitale (`yaw_deg`), tri de profondeur $Z$ (algorithme du peintre), capsules cylindriques ombrées à 3 niveaux (ombre, matériau, reflet spéculaire) et paumes polygonales 3D.
    - **Studio Web 3D Three.js ([`scripts/studio_v3.py`](../../scripts/studio_v3.py) & [`index.html`](../../src/lsfb_live/display/web_studio/index.html)) :** Visionneuse WebGL 3D interactive avec éclairage 3 points, caméra `OrbitControls` 360°, saisie de phrases Text-to-Sign, catalogue des 30 signes 3D et mode Motion Capture Live.
+

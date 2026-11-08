@@ -49,6 +49,7 @@ _FRENCH_STEM_TO_GLOSS: dict[str, str] = {
 }
 
 _PROTOTYPES_CACHE: dict[str, np.ndarray] = {}
+_PROTOTYPES_CONF_CACHE: dict[str, float] = {}
 
 
 def _strip_accents(text: str) -> str:
@@ -99,7 +100,14 @@ def load_sign_prototypes_3d(
         raw = json.load(f)
     for sign_name, payload in raw.items():
         _PROTOTYPES_CACHE[sign_name] = np.array(payload["frames"], dtype=np.float32)
+        _PROTOTYPES_CONF_CACHE[sign_name] = float(payload.get("model_confidence", 0.90))
     return _PROTOTYPES_CACHE
+
+
+def get_prototype_model_confidence(sign_name: str) -> float:
+    """Retourne le score de reconnaissance du modèle BiStream-MSST sur le mouvement du mannequin."""
+    load_sign_prototypes_3d()
+    return _PROTOTYPES_CONF_CACHE.get(sign_name, 0.90)
 
 
 def _build_procedural_fallback_rig(sign_name: str, progress: float) -> RigSkeleton3D:
@@ -182,3 +190,4 @@ class SignSequenceTimeline:
         rig_end = get_sign_rig_at_progress(curr_sign, 1.0)
         rig_next = get_sign_rig_at_progress(next_sign, 0.0)
         return curr_sign, interpolate_rig_skeletons(rig_end, rig_next, blend)
+

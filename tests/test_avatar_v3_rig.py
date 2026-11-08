@@ -6,6 +6,7 @@ from lsfb_live.avatar.rig_skeleton import (
     UPPER_ARM_LENGTH,
     interpolate_rig_skeletons,
     retarget_normalized_65_to_rig,
+    rig_to_normalized_65,
     solve_two_bone_arm_ik,
 )
 from lsfb_live.avatar.text_to_sign_sequencer import (
@@ -58,3 +59,13 @@ def test_render_rig_mannequin_cv_with_orbital_yaw() -> None:
         canvas = np.zeros((720, 640, 3), dtype=np.uint8)
         render_rig_mannequin_cv(canvas, rig, yaw_deg=yaw)
         assert np.any(canvas > 0)
+
+
+def test_rig_to_normalized_65_preserves_hand_geometry() -> None:
+    """Vérifie l'aller-retour sans distorsion entre RigSkeleton3D et le format modèle (65, 3)."""
+    rig = get_sign_rig_at_progress("AIMER", 0.5)
+    reconstructed = rig_to_normalized_65(rig)
+    assert reconstructed.shape == (65, 3)
+    assert np.all(np.isfinite(reconstructed))
+
+
