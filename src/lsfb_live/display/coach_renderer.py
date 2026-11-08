@@ -109,7 +109,16 @@ def build_coach_reference_card(
     cv2.line(canvas, (0, 104), (bar_width, 104), (0, 220, 160), 3, cv2.LINE_AA)
 
     # Raccourcis clavier en bas
-    cv2.putText(canvas, "[N] Suivant  |  [P] Precedent  |  [T] Mode Phrase v3  |  [Q] Quitter", (16, height - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (160, 160, 160), 1, cv2.LINE_AA)
+    cv2.putText(
+        canvas,
+        "[N/P] Signe | [T] Phrase v3 | [M] MoCap Miroir | [A/D] Angle 3D | [Q] Quitter",
+        (14, height - 22),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.38,
+        (165, 175, 190),
+        1,
+        cv2.LINE_AA,
+    )
 
 
 def assemble_practice_split_screen(

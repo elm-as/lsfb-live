@@ -8,18 +8,18 @@
 [![Top-1 Accuracy](https://img.shields.io/badge/Top--1%20Accuracy-81.07%25%20(v1.5)-brightgreen?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 [![Top-5 Accuracy](https://img.shields.io/badge/Top--5%20Accuracy-95.75%25%20(v1.5)-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 [![Balanced Accuracy](https://img.shields.io/badge/Balanced%20Accuracy-80.52%25%20(v1.5)-blue?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Architecture](https://img.shields.io/badge/Architecture-BiStream--MSST%20(416%20dims)-purple?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Tests](https://img.shields.io/badge/Tests-29%20Passing-brightgreen?style=for-the-badge)](#5-architecture-du-projet)
+[![Architecture](https://img.shields.io/badge/Architecture-BiStream--MSST%20%2B%203D%20IK%20Rig%20(V3)-purple?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Tests](https://img.shields.io/badge/Tests-33%20Passing-brightgreen?style=for-the-badge)](#5-architecture-du-projet)
 
-*Un pipeline complet de Data Science : du corpus de poses de l'Université de Namur jusqu'à la classification temps réel face webcam sur un processeur standard d'ordinateur portable, sans carte graphique dédiée.*
+*Un pipeline complet de Data Science & Vision 3D : du corpus de poses de l'Université de Namur jusqu'à la classification temps réel (81,1% Top-1) et la synthèse 3D Text-to-Sign par mannequin humain rigué sur CPU.*
 
 </div>
 
-### Démonstration Temps Réel (v1.4 — BlazePalm `VIDEO` + BiStream-MSST)
+### Démonstration Temps Réel (v1.5 Reconnaissance Webcam & V3 Mannequin Humain Rigué 3D)
 
-| `AIMER` (Paume ouverte sur le torse — **81,1%**) | `PAPA` (Configuration « L » au menton — **57,6%**) | `OUBLIER` (Poing fermé près de la tempe — **46,9%**) |
-| :---: | :---: | :---: |
-| ![AIMER](docs/assets/demo_aimer.png) | ![PAPA](docs/assets/demo_papa.jpg) | ![OUBLIER](docs/assets/demo_oublier.jpg) |
+| `AIMER` (Webcam Live — **81,1%**) | `PAPA` (Configuration « L » — **57,6%**) | `OUBLIER` (Poing fermé — **46,9%**) | `RENCONTRER` (Mannequin Rigué 3D **V3** +15°) |
+| :---: | :---: | :---: | :---: |
+| ![AIMER](docs/assets/demo_aimer.png) | ![PAPA](docs/assets/demo_papa.jpg) | ![OUBLIER](docs/assets/demo_oublier.jpg) | ![RIG V3](docs/assets/demo_rig_v3.png) |
 
 ---
 
@@ -176,23 +176,24 @@ Le projet applique les principes d'architecture logicielle par domaine de la cha
 ```
 src/lsfb_live/
 ├── dataset/         Téléchargement résilient, indexation et compilation des tenseurs
-├── landmarks/       Normalisation invariante, vitesses et descripteurs phonologiques (416 dims)
-├── recognition/     Modèles (BiGRU, ConvTransformer, MSST, BiStream), entraînement Focal, moteur live
-├── capture/         Gestion du flux webcam et extracteur MediaPipe Tasks Holistic
-└── display/         Rendu OpenCV du squelette, avatar paramétrique cinématique et écran scindé
+├── landmarks/       Normalisation invariante, trajectoires multi-frames et phonologie (416 dims)
+├── recognition/     Modèles (BiGRU, ConvTransformer, MSST, BiStream), moteur live et phrases v2
+├── avatar/          Squelette humain rigué 3D, Cinématique Inverse (IK 2-os) et Text-to-Sign V3
+├── capture/         Gestion du flux webcam et extracteur dédié BlazePalm VIDEO + Pose VIDEO
+└── display/         Rendu 3D volumétrique OpenCV, Studio Web 3D Three.js et écran scindé
 ```
 
-La suite de 29 tests unitaires valide l'intégrité de l'ensemble de la chaîne :
+La suite de 33 tests unitaires valide l'intégrité de l'ensemble de la chaîne :
 ```powershell
 pytest -v
-# ================= 29 passed in 4.65s =================
+# ================= 33 passed in 9.71s =================
 ```
 
 ---
 
 ## 6. Guide de Démarrage Rapide
 
-Les poids du modèle retenu v1.4 (`models/bistream_best.pt`, **80,47% Top-1 / 95,84% Top-5**) ainsi que le dictionnaire des classes (`models/class_mapping.json`) sont directement configurés par défaut dans l'application (les poids Top-250 restent disponibles dans `models/msst_best.pt`).
+Les poids du modèle retenu v1.5 (`models/bistream_best.pt`, **81,07% Top-1 / 95,75% Top-5 / 80,52% Balanced**), le dictionnaire des classes (`models/class_mapping.json`) ainsi que les **30 prototypes 3D natifs du rig humain (`models/sign_prototypes_3d.json`)** sont directement configurés par défaut.
 
 ### 1. Installation
 ```powershell
@@ -205,19 +206,31 @@ python -m venv .venv
 pip install -e .
 ```
 
-### 2. Tester en direct (Webcam)
+### 2. Tester en direct (Webcam & Rig Humain 3D V3)
 
-#### Option A — Mode Coach Interactif & Séquenceur Text-to-Sign v3 (`practice.py`)
-Ce mode ouvre un écran scindé : à gauche, un **avatar vectoriel paramétrique (base v3)** reproduit les **14 gestes canoniques** (`AIMER`, `PAPA`, `OUBLIER`, `COMPRENDRE`, `RENCONTRER`, `DIFFERENT`, `MAISON`, `CORPS`, `AVANCER`, `MONTRER`, `INTERPRETE`, `ECOLE`, `FAMILLE`, `AMI`) ou enchaîne des **phrases complètes en LSFB** par interpolation cosinus continue ; à droite, votre webcam analyse vos mouvements en temps réel.
+#### Option A — Mode Coach 3D, Text-to-Sign & Motion Capture dans OpenCV (`practice.py`)
+Ce mode ouvre un écran scindé : à gauche, le **Mannequin Humain Rigué 3D (V3)** (Cinématique Inverse analytique à 2 segments, tri de profondeur $Z$, capsules volumétriques ombrées et 42 phalanges 3D issues du corpus LSFB) ; à droite, votre webcam en temps réel.
 ```powershell
 python scripts/practice.py
+# Ou directement avec une phrase en français à traduire en signes 3D :
+python scripts/practice.py --sentence "Mon papa aime toujours la famille"
 ```
-- **Touches :**
-  - **`N` / `P`** : Signe suivant / précédent (ou phrase suivante / précédente en mode Phrase).
-  - **`T`** : Basculer entre le **Mode Signe Isolé** et le **Mode Phrase v3 (Text-to-Sign)**.
+- **Touches interactives :**
+  - **`N` / `P`** : Signe suivant / précédent (ou phrase suivante / précédente).
+  - **`T`** : Basculer en **Mode Text-to-Sign V3** (enchaînement de phrases complètes en 3D).
+  - **`M`** : Basculer en **Mode Motion Capture Live (Retargeting 3D)** — vos propres mouvements face webcam pilotent le mannequin 3D en temps réel !
+  - **`A` / `D`** : Tourner la caméra 3D autour du mannequin (`-45°` à `+45°`).
   - **`Q`** ou **`Échap`** : Quitter.
 
-#### Option B — Mode Libre & Construction de Phrases en Direct v2 (`live.py`)
+#### Option B — Studio Web 3D Interactif Three.js (`studio_v3.py`)
+Ouvre dans votre navigateur (`http://127.0.0.1:8765`) un **Studio WebGL Three.js 360°** permettant de saisir n'importe quelle phrase en français pour la voir signée en 3D, d'inspecter les 30 signes natifs sous tous les angles à vitesse réglable (`0.4x`–`1.0x`), ou d'activer le Motion Capture webcam :
+```powershell
+python scripts/studio_v3.py
+# Avec capture webcam activée pour l'onglet MoCap Live :
+python scripts/studio_v3.py --enable-webcam
+```
+
+#### Option C — Mode Libre & Construction de Phrases en Direct v2 (`live.py`)
 ```powershell
 python scripts/live.py
 ```
@@ -248,9 +261,9 @@ python scripts/evaluate.py --model-path models/msst_best.pt --model-type msst --
 - **v1.1 (Validé) :** Enrichissement cinématique (390 features positions + vitesses, symétrie miroir, MSST-Transformer à **54,5% Top-1 / 83,2% Top-5 / 54,2% Balanced**).
 - **v1.2 (Validé) :** Montée en charge sur le **Top-250** des signes LSFB (75 825 instances réelles, 33 753 séquences de test sur 40 signeurs non vus, **70,7% Top-5** et **41,6% Balanced Acc**).
 - **v1.3 / Pré-v3 (Validé) :** Architecture **BiStream-MSST (416 features)** avec descripteurs phonologiques explicites, moteur d'inférence invariant au framerate (fenêtrage temporel de 1,3 s) et **Avatar Paramétrique Vectoriel** mathématique.
-- **v1.4 (Validé) :** Détection dédiée des doigts **BlazePalm (`HandLandmarker` en mode `VIDEO`, 28,3 FPS)** + normalisation locale centrée sur le poignet et vecteur normal de la paume (**80,47% Top-1 / 95,84% Top-5 / 78,93% Balanced Accuracy** sur 40 signeurs non vus).
-- **v2.0 (Prochaine étape) :** Reconnaissance continue sur flux non segmenté (LSFB-CONT) couplée à un modèle de langue (LLM) pour la traduction en phrases complètes.
-- **v3.0 (Génération inverse) :** Text-to-Sign complet : synthèse de coordonnées 3D de squelettes pour animer l'avatar gestuel sur n'importe quel texte.
+- **v1.5 (Validé) :** Trajectoires multi-frames cumulées sans saut et découpage du maintien final (**81,07% Top-1 / 95,75% Top-5 / 80,52% Balanced Accuracy**, `ADORER` à 100%).
+- **v2.0 (Validé) :** Accumulateur de gloses par stabilité temporelle et transcription de phrases LSFB $\to$ Français en direct (`sentence_builder.py`).
+- **v3.0 (Validé) :** **Mannequin Humain Rigué 3D** (`src/lsfb_live/avatar/`) avec Cinématique Inverse analytique à 2 os, 42 phalanges 3D extraites des 30 signes natifs du corpus LSFB, lemmatiseur **Text-to-Sign** Français $\to$ LSFB, **Motion Capture Retargeting** en direct et **Studio Web 3D Three.js** (`scripts/studio_v3.py`).
 
 ---
 

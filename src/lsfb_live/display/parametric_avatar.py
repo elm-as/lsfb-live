@@ -9,6 +9,9 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from lsfb_live.avatar.text_to_sign_sequencer import get_sign_rig_at_progress
+from lsfb_live.display.rig_renderer_cv import render_rig_mannequin_cv
+
 
 @dataclass(frozen=True)
 class AvatarPoseState:
@@ -286,6 +289,6 @@ def render_parametric_avatar_frame(
     sign_name: str,
     progress: float,
 ) -> None:
-    """Génère le rendu complet de l'avatar paramétrique pour un signe isolé."""
-    pose = compute_canonical_sign_pose(sign_name, progress)
-    render_parametric_pose_state(canvas, pose)
+    """Génère le rendu 3D volumétrique du mannequin humain rigué (V3) pour un signe."""
+    rig = get_sign_rig_at_progress(sign_name, progress)
+    render_rig_mannequin_cv(canvas, rig, yaw_deg=0.0)

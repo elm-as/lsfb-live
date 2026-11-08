@@ -1,7 +1,9 @@
-"""Point d'entrée pour le mode entraînement interactif avec Avatar LSFB (Base v3).
+"""Point d'entrée pour l'entraînement, le Text-to-Sign et le Motion Capture avec Rig Humain 3D (V3).
 
-Affiche un écran scindé : à gauche l'avatar cinématique paramétrique (100% miroir et anatomique),
-à droite votre flux webcam avec détection et rétroaction de validation en direct.
+Trois modes interactifs dans la même fenêtre scindée :
+1. Mode Catalogue Corpus 3D : Le mannequin 3D rejoue les vraies trajectoires 3D LSFB avec IK.
+2. Mode Text-to-Sign [T]    : Traduit une phrase française en séquence de signes 3D enchaînés.
+3. Mode Motion Capture [M]  : Vos propres mouvements face webcam pilotent le mannequin 3D en direct.
 """
 
 from pathlib import Path
@@ -10,108 +12,54 @@ import sys
 import cv2
 import numpy as np
 
+from lsfb_live.avatar.rig_skeleton import retarget_frame_landmarks_to_rig
+from lsfb_live.avatar.text_to_sign_sequencer import (
+    SignSequenceTimeline,
+    get_sign_rig_at_progress,
+    parse_french_to_lsfb_glosses,
+)
 from lsfb_live.capture.holistic_extractor import HolisticExtractor, ensure_holistic_model_present
 from lsfb_live.capture.webcam_stream import WebcamStream
 from lsfb_live.display.coach_renderer import assemble_practice_split_screen, build_coach_reference_card
-from lsfb_live.display.parametric_avatar import (
-    compute_sequence_avatar_pose,
-    render_parametric_avatar_frame,
-    render_parametric_pose_state,
-)
+from lsfb_live.display.rig_renderer_cv import render_rig_mannequin_cv
 from lsfb_live.display.visualizer import draw_hud_panel, draw_skeleton_layer
 from lsfb_live.recognition.live_engine import LiveInferenceEngine
 
-# Catalogue des 14 signes canoniques avec modèle cinématique paramétrique (v1.4 / v3)
 GUIDED_SIGNS: list[dict[str, object]] = [
-    {
-        "sign": "AIMER",
-        "description": "Main ouverte posee sur le coeur/torse glissant avec douceur.",
-        "is_bimanual": False,
-    },
-    {
-        "sign": "PAPA",
-        "description": "Main en 'L' (pouce + index tendus) tapotant pres du menton.",
-        "is_bimanual": False,
-    },
-    {
-        "sign": "OUBLIER",
-        "description": "Main passant devant le front et se refermant en poing.",
-        "is_bimanual": False,
-    },
-    {
-        "sign": "COMPRENDRE",
-        "description": "Poing pres de la tempe qui s'ouvre vers le haut en 'L'.",
-        "is_bimanual": False,
-    },
-    {
-        "sign": "RENCONTRER",
-        "description": "Deux index verticaux face a face se rejoignant au centre.",
-        "is_bimanual": True,
-    },
-    {
-        "sign": "DIFFERENT",
-        "description": "Deux index au centre qui s'ecartent vivement sur les cotes.",
-        "is_bimanual": True,
-    },
-    {
-        "sign": "MAISON",
-        "description": "Mains obliques jointes par le bout des doigts formant un toit.",
-        "is_bimanual": True,
-    },
-    {
-        "sign": "CORPS",
-        "description": "Mains ouvertes descendant le long du buste jusqu'a la taille.",
-        "is_bimanual": True,
-    },
-    {
-        "sign": "AVANCER",
-        "description": "Les deux mains ouvertes poussant franchement vers la camera.",
-        "is_bimanual": True,
-    },
-    {
-        "sign": "MONTRER",
-        "description": "Main droite avec l'index pointe qui vise droit devant vous.",
-        "is_bimanual": False,
-    },
-    {
-        "sign": "INTERPRETE",
-        "description": "Mains ouvertes avec rotation alternee de va-et-vient au torse.",
-        "is_bimanual": True,
-    },
-    {
-        "sign": "ECOLE",
-        "description": "Deux mains ouvertes devant le buste qui battent ensemble.",
-        "is_bimanual": True,
-    },
-    {
-        "sign": "FAMILLE",
-        "description": "Deux mains ouvertes decrivant un cercle horizontal devant soi.",
-        "is_bimanual": True,
-    },
-    {
-        "sign": "AMI",
-        "description": "Deux poings fermes qui se rejoignent chaleureusement au centre.",
-        "is_bimanual": True,
-    },
+    {"sign": "AIMER", "description": "Main ouverte posee sur le coeur/torse glissant avec douceur.", "is_bimanual": False},
+    {"sign": "PAPA", "description": "Main en 'L' (pouce + index tendus) tapotant pres du menton.", "is_bimanual": False},
+    {"sign": "OUBLIER", "description": "Main passant devant le front et se refermant en poing.", "is_bimanual": False},
+    {"sign": "COMPRENDRE", "description": "Poing pres de la tempe qui s'ouvre vers le haut en 'L'.", "is_bimanual": False},
+    {"sign": "RENCONTRER", "description": "Deux index verticaux face a face se rejoignant au centre.", "is_bimanual": True},
+    {"sign": "DIFFERENT", "description": "Deux index au centre qui s'ecartent vivement sur les cotes.", "is_bimanual": True},
+    {"sign": "ADORER", "description": "Mains ouvertes descendant devant le torse avec intensite.", "is_bimanual": True},
+    {"sign": "MAISON", "description": "Mains obliques jointes par le bout des doigts formant un toit.", "is_bimanual": True},
+    {"sign": "CORPS", "description": "Mains ouvertes descendant le long du buste jusqu'a la taille.", "is_bimanual": True},
+    {"sign": "AVANCER", "description": "Les deux mains ouvertes poussant franchement vers la camera.", "is_bimanual": True},
+    {"sign": "MONTRER", "description": "Main droite avec l'index pointe qui vise droit devant vous.", "is_bimanual": False},
+    {"sign": "INTERPRETE", "description": "Mains ouvertes avec rotation alternee de va-et-vient au torse.", "is_bimanual": True},
+    {"sign": "ECOLE", "description": "Deux mains ouvertes devant le buste qui battent ensemble.", "is_bimanual": True},
+    {"sign": "FAMILLE", "description": "Deux mains ouvertes decrivant un cercle horizontal devant soi.", "is_bimanual": True},
+    {"sign": "AMI", "description": "Deux poings fermes qui se rejoignent chaleureusement au centre.", "is_bimanual": True},
 ]
 
-# Phrases canoniques pour la démonstration Text-to-Sign (v3)
-TEXT_TO_SIGN_SENTENCES: list[list[str]] = [
-    ["PAPA", "AIMER", "FAMILLE"],
-    ["RENCONTRER", "AMI", "ECOLE"],
-    ["INTERPRETE", "COMPRENDRE", "DIFFERENT"],
-    ["AVANCER", "MAISON", "OUBLIER"],
+TEXT_TO_SIGN_SENTENCES: list[str] = [
+    "Mon papa aime toujours la famille",
+    "Rencontrer un ami different a l'ecole",
+    "L'interprete explique et aide a comprendre l'histoire",
+    "Avancer vers la maison sans oublier",
 ]
 
 
 def parse_cli_arguments() -> argparse.Namespace:
-    """Analyse les arguments CLI pour le mode coach."""
-    parser = argparse.ArgumentParser(description="Mode entraînement interactif avec Avatar LSFB.")
+    """Analyse les arguments CLI pour le mode coach et Text-to-Sign V3."""
+    parser = argparse.ArgumentParser(description="Avatar Humain Rigué 3D (V3) : Coach, Text-to-Sign & Motion Capture.")
     parser.add_argument("--camera-index", type=int, default=0, help="Index de la caméra (défaut : 0)")
-    parser.add_argument("--threshold", type=float, default=0.25, help="Seuil de détection pour valider le signe (défaut : 0.25)")
-    parser.add_argument("--model-path", type=Path, default=None, help="Poids du modèle (défaut: bistream_best.pt ou msst_best.pt)")
-    parser.add_argument("--model-type", type=str, default="bistream", choices=["bigru", "transformer", "msst", "bistream"], help="Architecture (défaut: bistream)")
-    parser.add_argument("--mapping-path", type=Path, default=Path("models/class_mapping.json"), help="Fichier de mappage")
+    parser.add_argument("--threshold", type=float, default=0.25, help="Seuil de validation (défaut : 0.25)")
+    parser.add_argument("--sentence", type=str, default=None, help="Phrase en français à traduire en signes 3D dès l'ouverture")
+    parser.add_argument("--model-path", type=Path, default=None, help="Poids du modèle (défaut: bistream_best.pt)")
+    parser.add_argument("--model-type", type=str, default="bistream", choices=["bigru", "transformer", "msst", "bistream"])
+    parser.add_argument("--mapping-path", type=Path, default=Path("models/class_mapping.json"))
     return parser.parse_args()
 
 
@@ -119,18 +67,23 @@ def run_coach_session(
     stream: WebcamStream,
     extractor: HolisticExtractor,
     engine: LiveInferenceEngine,
-    args: argparse.Namespace,
 ) -> None:
-    """Boucle principale de la session d'entraînement avec écran scindé."""
-    window_name = "LSFB Coach — Avatar Cinematique & Webcam Live"
+    """Boucle principale de la session d'entraînement avec Mannequin Humain 3D Rigué."""
+    args = parse_cli_arguments()
+    window_name = "LSFB V3 — Mannequin Humain Rigue 3D & Webcam Live"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 1280, 720)
     cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
 
+    sentences = list(TEXT_TO_SIGN_SENTENCES)
+    if args.sentence:
+        sentences.insert(0, args.sentence)
+
     current_idx = 0
     sentence_idx = 0
-    is_sentence_mode = False
-    cycle_steps = 45  # Durée du cycle d'animation (environ 1.5s à 30 FPS)
+    mode = "sentence" if args.sentence else "catalog"  # 'catalog', 'sentence', 'mocap'
+    yaw_deg = 0.0
+    cycle_steps = 45
     step_counter = 0
 
     try:
@@ -139,30 +92,42 @@ def run_coach_session(
             if not success:
                 break
 
-            # Extraction sur trame brute non inversée (alignée sur l'anatomie et le dataset LSFB)
             landmarks = extractor.extract_frame_landmarks(webcam_frame)
             prediction = engine.push_frame(landmarks)
 
-            # Inversion miroir uniquement pour le confort visuel d'affichage
             webcam_frame = cv2.flip(webcam_frame, 1)
             draw_skeleton_layer(webcam_frame, landmarks, is_mirrored=True)
             draw_hud_panel(webcam_frame, prediction, stream.fps)
 
             ref_canvas = np.zeros((720, 640, 3), dtype=np.uint8)
-            ref_canvas[:] = (22, 25, 32)
+            ref_canvas[:] = (18, 21, 28)
 
-            if is_sentence_mode:
-                active_sentence = TEXT_TO_SIGN_SENTENCES[sentence_idx]
-                seq_steps = cycle_steps * len(active_sentence)
-                progress = float(step_counter % seq_steps) / float(seq_steps)
-                step_counter += 1
-                sign_name, pose_state = compute_sequence_avatar_pose(active_sentence, progress)
-                render_parametric_pose_state(ref_canvas, pose_state)
-                sentence_str = " -> ".join(active_sentence)
+            if mode == "mocap":
+                live_rig = retarget_frame_landmarks_to_rig(landmarks)
+                render_rig_mannequin_cv(ref_canvas, live_rig, yaw_deg=yaw_deg)
+                sign_name = prediction.sign if prediction is not None else "RETARGETING"
                 build_coach_reference_card(
                     ref_canvas,
-                    f"PHRASE : {sign_name}",
-                    f"Sequence v3 (Text-to-Sign) : {sentence_str}",
+                    f"MOCAP : {sign_name}",
+                    f"Retargeting 3D en direct (Angle 3D : {yaw_deg:+.0f} deg)",
+                    1.0,
+                    is_bimanual=False,
+                )
+                is_bimanual = False
+            elif mode == "sentence":
+                phrase_fr = sentences[sentence_idx]
+                glosses = parse_french_to_lsfb_glosses(phrase_fr)
+                timeline = SignSequenceTimeline(glosses)
+                seq_steps = cycle_steps * max(1, len(timeline.glosses))
+                progress = float(step_counter % seq_steps) / float(seq_steps)
+                step_counter += 1
+                sign_name, rig_state = timeline.evaluate(progress)
+                render_rig_mannequin_cv(ref_canvas, rig_state, yaw_deg=yaw_deg)
+                gloss_str = " -> ".join(timeline.glosses)
+                build_coach_reference_card(
+                    ref_canvas,
+                    f"TEXT-TO-SIGN : {sign_name}",
+                    f"\"{phrase_fr}\" ({gloss_str})",
                     progress,
                     is_bimanual=False,
                 )
@@ -171,30 +136,27 @@ def run_coach_session(
                 active_sign_spec = GUIDED_SIGNS[current_idx]
                 sign_name = str(active_sign_spec["sign"])
                 is_bimanual = bool(active_sign_spec["is_bimanual"])
-
                 progress = float(step_counter % cycle_steps) / float(cycle_steps)
                 step_counter += 1
-
-                render_parametric_avatar_frame(ref_canvas, sign_name, progress)
+                rig_state = get_sign_rig_at_progress(sign_name, progress)
+                render_rig_mannequin_cv(ref_canvas, rig_state, yaw_deg=yaw_deg)
                 build_coach_reference_card(
                     ref_canvas,
-                    sign_name,
+                    f"{sign_name}  ({yaw_deg:+.0f} deg)",
                     str(active_sign_spec["description"]),
                     progress,
                     is_bimanual=is_bimanual,
                 )
 
-            # Analyse des mains de l'utilisateur
             has_left_hand = not np.all(landmarks.left_hand == 0)
             has_right_hand = not np.all(landmarks.right_hand == 0)
             hands_warning = None
             if is_bimanual and (not has_left_hand or not has_right_hand):
                 hands_warning = "ATTENTION : 2 MAINS REQUISES (Levez vos deux mains !)"
 
-            # Vérification de la réussite du signe cible
             is_match = False
             target_conf = 0.0
-            if prediction is not None and hands_warning is None:
+            if mode != "mocap" and prediction is not None and hands_warning is None:
                 for cand_sign, cand_prob in prediction.top5:
                     if cand_sign == sign_name:
                         target_conf = cand_prob
@@ -214,18 +176,24 @@ def run_coach_session(
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), ord("Q"), 27):
                 break
-            if key in (ord("t"), ord("T")):  # Bascule Mode Signe Isolé <-> Mode Phrase v3
-                is_sentence_mode = not is_sentence_mode
+            if key in (ord("t"), ord("T")):
+                mode = "sentence" if mode != "sentence" else "catalog"
                 step_counter = 0
-            if key in (ord("n"), ord("N")):  # Suivant
-                if is_sentence_mode:
-                    sentence_idx = (sentence_idx + 1) % len(TEXT_TO_SIGN_SENTENCES)
+            if key in (ord("m"), ord("M")):
+                mode = "mocap" if mode != "mocap" else "catalog"
+            if key in (ord("a"), ord("A")):
+                yaw_deg = max(-45.0, yaw_deg - 10.0)
+            if key in (ord("d"), ord("D")):
+                yaw_deg = min(45.0, yaw_deg + 10.0)
+            if key in (ord("n"), ord("N")):
+                if mode == "sentence":
+                    sentence_idx = (sentence_idx + 1) % len(sentences)
                 else:
                     current_idx = (current_idx + 1) % len(GUIDED_SIGNS)
                 step_counter = 0
-            if key in (ord("p"), ord("P")):  # Précédent
-                if is_sentence_mode:
-                    sentence_idx = (sentence_idx - 1) % len(TEXT_TO_SIGN_SENTENCES)
+            if key in (ord("p"), ord("P")):
+                if mode == "sentence":
+                    sentence_idx = (sentence_idx - 1) % len(sentences)
                 else:
                     current_idx = (current_idx - 1) % len(GUIDED_SIGNS)
                 step_counter = 0
@@ -234,15 +202,13 @@ def run_coach_session(
 
 
 def main() -> int:
-    """Initialise le mode coach et démarre la fenêtre interactive."""
+    """Initialise le mode coach V3 et démarre la fenêtre interactive."""
     args = parse_cli_arguments()
     ensure_holistic_model_present(Path("models/holistic_landmarker.task"))
 
-    print("=== Démarrage du mode Coach LSFB (Avatar Paramétrique v3) ===")
-    print(f"Catalogue de {len(GUIDED_SIGNS)} signes canoniques charges.")
-    print("Commandes dans la fenetre : [N] Suivant | [P] Precedent | [Q] Quitter")
+    print("=== Démarrage de LSFB V3 (Mannequin Humain Rigué 3D) ===")
+    print("Modes : [Catalogue 3D] | [T] Text-to-Sign | [M] Motion Capture Live | [A/D] Rotation 3D")
 
-    # Sélection automatique du meilleur modèle disponible
     model_type = args.model_type
     if args.model_path is not None:
         model_path = args.model_path
@@ -267,12 +233,12 @@ def main() -> int:
         return 1
 
     try:
-        run_coach_session(stream, extractor, engine, args)
+        run_coach_session(stream, extractor, engine)
         return 0
     finally:
         extractor.close()
         stream.release()
-        print("\nSession Coach terminee.")
+        print("\nSession LSFB V3 terminee.")
 
 
 if __name__ == "__main__":

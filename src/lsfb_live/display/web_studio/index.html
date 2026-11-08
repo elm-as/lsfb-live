@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>LSFB Studio V3 — Rig Humain 3D & Text-to-Sign</title>
+  <style>
+    :root {
+      --bg-void: #0a0c10;
+      --bg-panel: #11151c;
+      --border: #222936;
+      --text-main: #e2e8f0;
+      --text-muted: #8b9bb4;
+      --accent-amber: #f59e0b;
+      --accent-emerald: #10b981;
+      --accent-cyan: #0ea5e9;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-void);
+      color: var(--text-main);
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      overflow: hidden;
+    }
+    .sidebar {
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 16px;
+      gap: 14px;
+    }
+    .brand {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+    .brand-tag {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: var(--accent-amber);
+      text-transform: uppercase;
+    }
+    .brand h1 { font-size: 18px; font-weight: 700; margin-top: 4px; }
+    .mode-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      background: var(--bg-void);
+      padding: 4px;
+      border: 1px solid var(--border);
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 4px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-transform: uppercase;
+    }
+    .tab-btn.active {
+      background: #1b2230;
+      color: var(--text-main);
+      border-bottom: 2px solid var(--accent-amber);
+    }
+    .section-box {
+      border: 1px solid var(--border);
+      background: #0d1017;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .section-label {
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    textarea {
+      width: 100%;
+      height: 62px;
+      background: #07090d;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 8px;
+      font-size: 13px;
+      resize: none;
+      outline: none;
+    }
+    textarea:focus { border-color: var(--accent-amber); }
+    .btn-primary {
+      background: var(--accent-amber);
+      color: #090b0e;
+      border: none;
+      padding: 9px 12px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .gloss-strip {
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      color: var(--accent-emerald);
+      min-height: 20px;
+      word-break: break-word;
+    }
+    .sign-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4px;
+      overflow-y: auto;
+      flex: 1;
+      padding-right: 4px;
+    }
+    .sign-btn {
+      background: #131822;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 7px 8px;
+      text-align: left;
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+    }
+    .sign-btn:hover, .sign-btn.active {
+      border-color: var(--accent-emerald);
+      background: #142423;
+    }
+    .viewport {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+    }
+    .hud-top {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+    .hud-card {
+      background: rgba(13, 16, 23, 0.88);
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      font-family: Consolas, monospace;
+      pointer-events: auto;
+    }
+    .hud-sign { font-size: 24px; font-weight: 700; color: var(--accent-emerald); }
+    .hud-meta { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-top: 3px; }
+    .controls-bar {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      background: rgba(13, 16, 23, 0.92);
+      border: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+    }
+    .cam-btn {
+      background: #171d28;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 5px 10px;
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    input[type="range"] { flex: 1; accent-color: var(--accent-amber); }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-tag">ElmasCore · LSFB V3 Rig</div>
+      <h1>Studio Humain Rigué 3D</h1>
+    </div>
+
+    <div class="mode-tabs">
+      <button class="tab-btn active" id="tab-tts" onclick="setMode('tts')">Text-to-Sign</button>
+      <button class="tab-btn" id="tab-cat" onclick="setMode('catalog')">Corpus 3D (30)</button>
+      <button class="tab-btn" id="tab-mocap" onclick="setMode('mocap')">MoCap Live</button>
+    </div>
+
+    <div class="section-box" id="tts-box">
+      <div class="section-label">Traduction Français → Séquence 3D LSFB</div>
+      <textarea id="fr-input">Mon papa aime toujours la famille et explique l'histoire à l'école</textarea>
+      <button class="btn-primary" onclick="translateAndPlay()">Traduire & Animer en 3D</button>
+      <div class="gloss-strip" id="gloss-output">GLOSES : PAPA → AIMER → TOUJOURS → FAMILLE → EXPLIQUER → HISTOIRE → ECOLE</div>
+    </div>
+
+    <div class="section-label">Répertoire des 30 Signes Natifs 3D (IK + 42 Phalanges)</div>
+    <div class="sign-grid" id="sign-grid"></div>
+  </aside>
+
+  <main class="viewport" id="viewport">
+    <div class="hud-top">
+      <div class="hud-card">
+        <div class="hud-sign" id="hud-sign">PAPA</div>
+        <div class="hud-meta" id="hud-sub">MODE : TEXT-TO-SIGN 3D | IK 2-SEGMENTS + 42 PHALANGES</div>
+      </div>
+      <div class="hud-card">
+        <div class="hud-meta" id="hud-telemetry">FPS: 60 | L-WRIST: (0.00, 0.00) | R-WRIST: (0.00, 0.00)</div>
+      </div>
+    </div>
+
+    <div class="controls-bar">
+      <span>VITESSE :</span>
+      <button class="cam-btn" onclick="setSpeed(0.4)">0.4x</button>
+      <button class="cam-btn" onclick="setSpeed(1.0)">1.0x</button>
+      <input type="range" id="timeline" min="0" max="1000" value="0" />
+      <button class="cam-btn" onclick="setCameraView(0, 0.1, 2.35)">Face 0°</button>
+      <button class="cam-btn" onclick="setCameraView(1.15, 0.15, 2.15)">Profil 30°</button>
+      <button class="cam-btn" onclick="setCameraView(-1.15, 0.25, 2.15)">Oblique G</button>
+    </div>
+  </main>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    const HAND_EDGES = [
+      [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8],
+      [0,9],[9,10],[10,11],[11,12], [0,13],[13,14],[14,15],[15,16],
+      [0,17],[17,18],[18,19],[19,20], [5,9],[9,13],[13,17],[0,17]
+    ];
+
+    const container = document.getElementById("viewport");
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0c10);
+
+    const grid = new THREE.GridHelper(4, 16, 0x222936, 0x151a24);
+    grid.position.y = -0.95;
+    scene.add(grid);
+
+    const camera = new THREE.PerspectiveCamera(42, container.clientWidth / container.clientHeight, 0.1, 50);
+    camera.position.set(0, 0.1, 2.35);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, -0.05, 0);
+    controls.enableDamping = true;
+
+    scene.add(new THREE.AmbientLight(0xdbeafe, 0.65));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.35);
+    keyLight.position.set(1.8, 2.5, 2.5);
+    scene.add(keyLight);
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.55);
+    rimLight.position.set(-2.0, 1.2, -1.8);
+    scene.add(rimLight);
+
+    const matTorso = new THREE.MeshStandardMaterial({ color: 0x242c3a, roughness: 0.45, metalness: 0.2 });
+    const matHead = new THREE.MeshStandardMaterial({ color: 0xd8e0ea, roughness: 0.35, metalness: 0.1 });
+    const matArm = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.35, metalness: 0.2 });
+    const matJoint = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.25, metalness: 0.3 });
+    const matLeftHand = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3 });
+    const matRightHand = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.3 });
+    const matTip = new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0x422006 });
+
+    function makeBone(mat, radius) {
+      const geo = new THREE.CylinderGeometry(radius * 0.85, radius, 1, 14);
+      const mesh = new THREE.Mesh(geo, mat);
+      scene.add(mesh);
+      return mesh;
+    }
+    function makeSphere(mat, r) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 16), mat);
+      scene.add(m);
+      return m;
+    }
+
+    const headMesh = makeSphere(matHead, 0.17);
+    headMesh.scale.set(0.88, 1.08, 0.92);
+    const noseMesh = makeSphere(matJoint, 0.028);
+    const chestMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.32, 0.88, 16), matTorso);
+    chestMesh.scale.set(1.0, 1.0, 0.48);
+    scene.add(chestMesh);
+
+    const neckBone = makeBone(matHead, 0.055);
+    const collarL = makeBone(matTorso, 0.045);
+    const collarR = makeBone(matTorso, 0.045);
+    const upperArmL = makeBone(matArm, 0.062);
+    const upperArmR = makeBone(matArm, 0.062);
+    const foreArmL = makeBone(matArm, 0.052);
+    const foreArmR = makeBone(matArm, 0.052);
+
+    const joints = ["ls", "rs", "le", "re", "lw", "rw"].map(() => makeSphere(matJoint, 0.062));
+    const handLeftBones = HAND_EDGES.map(() => makeBone(matLeftHand, 0.015));
+    const handRightBones = HAND_EDGES.map(() => makeBone(matRightHand, 0.015));
+    const tipsSet = new Set([4, 8, 12, 16, 20]);
+    const handLeftJoints = Array.from({ length: 21 }, (_, i) => makeSphere(tipsSet.has(i) ? matTip : matLeftHand, tipsSet.has(i) ? 0.021 : 0.015));
+    const handRightJoints = Array.from({ length: 21 }, (_, i) => makeSphere(tipsSet.has(i) ? matTip : matRightHand, tipsSet.has(i) ? 0.021 : 0.015));
+
+    const upVec = new THREE.Vector3(0, 1, 0);
+    function alignBone(mesh, pA, pB) {
+      const dist = pA.distanceTo(pB);
+      if (dist < 1e-4) { mesh.visible = false; return; }
+      mesh.visible = true;
+      mesh.position.copy(pA).add(pB).multiplyScalar(0.5);
+      mesh.scale.set(1, dist, 1);
+      const dir = new THREE.Vector3().subVectors(pB, pA).normalize();
+      mesh.quaternion.setFromUnitVectors(upVec, dir);
+    }
+
+    function toVec3(arr) {
+      return new THREE.Vector3(arr[0], -arr[1], -arr[2]);
+    }
+
+    function applyRigState(rig) {
+      const hc = toVec3(rig.head_center);
+      const nt = toVec3(rig.nose_tip);
+      const nk = toVec3(rig.neck);
+      const pv = toVec3(rig.pelvis);
+      const ls = toVec3(rig.left_shoulder);
+      const rs = toVec3(rig.right_shoulder);
+      const le = toVec3(rig.left_elbow);
+      const re = toVec3(rig.right_elbow);
+      const lw = toVec3(rig.left_wrist);
+      const rw = toVec3(rig.right_wrist);
+
+      headMesh.position.copy(hc);
+      noseMesh.position.copy(nt);
+      chestMesh.position.copy(nk).add(pv).multiplyScalar(0.5);
+      alignBone(neckBone, nk, hc);
+      alignBone(collarL, nk, ls);
+      alignBone(collarR, nk, rs);
+      alignBone(upperArmL, ls, le);
+      alignBone(upperArmR, rs, re);
+      alignBone(foreArmL, le, lw);
+      alignBone(foreArmR, re, rw);
+
+      [ls, rs, le, re, lw, rw].forEach((p, idx) => joints[idx].position.copy(p));
+
+      const lhPts = rig.left_hand.map(toVec3);
+      const rhPts = rig.right_hand.map(toVec3);
+      lhPts.forEach((p, i) => handLeftJoints[i].position.copy(p));
+      rhPts.forEach((p, i) => handRightJoints[i].position.copy(p));
+      HAND_EDGES.forEach(([a, b], idx) => {
+        alignBone(handLeftBones[idx], lhPts[a], lhPts[b]);
+        alignBone(handRightBones[idx], rhPts[a], rhPts[b]);
+      });
+
+      document.getElementById("hud-telemetry").textContent =
+        `L-WRIST: (${rig.left_wrist[0].toFixed(2)}, ${rig.left_wrist[1].toFixed(2)}) | R-WRIST: (${rig.right_wrist[0].toFixed(2)}, ${rig.right_wrist[1].toFixed(2)})`;
+    }
+
+    let currentMode = "tts";
+    let speed = 1.0;
+    let progress = 0.0;
+    let activeGlosses = ["PAPA", "AIMER", "TOUJOURS", "FAMILLE", "EXPLIQUER", "HISTOIRE", "ECOLE"];
+    let activeSign = "AIMER";
+
+    window.setSpeed = (s) => { speed = s; };
+    window.setCameraView = (x, y, z) => { camera.position.set(x, y, z); controls.update(); };
+    window.setMode = (m) => {
+      currentMode = m;
+      ["tts", "cat", "mocap"].forEach(id => document.getElementById("tab-" + id).classList.remove("active"));
+      document.getElementById("tab-" + (m === "catalog" ? "cat" : m)).classList.add("active");
+    };
+    window.selectSign = (sign) => {
+      activeSign = sign;
+      setMode("catalog");
+      progress = 0.0;
+      document.querySelectorAll(".sign-btn").forEach(b => b.classList.toggle("active", b.dataset.sign === sign));
+    };
+    window.translateAndPlay = async () => {
+      const text = document.getElementById("fr-input").value;
+      const res = await fetch(`/api/translate?text=${encodeURIComponent(text)}`);
+      const data = await res.json();
+      activeGlosses = data.glosses.length ? data.glosses : ["AIMER"];
+      document.getElementById("gloss-output").textContent = "GLOSES : " + activeGlosses.join(" → ");
+      setMode("tts");
+      progress = 0.0;
+    };
+
+    fetch("/api/signs").then(r => r.json()).then(data => {
+      const gridEl = document.getElementById("sign-grid");
+      data.signs.forEach(s => {
+        const btn = document.createElement("button");
+        btn.className = "sign-btn";
+        btn.dataset.sign = s;
+        btn.innerHTML = `<span>${s}</span><span>3D</span>`;
+        btn.onclick = () => window.selectSign(s);
+        gridEl.appendChild(btn);
+      });
+    });
+
+    async function pollFrame() {
+      try {
+        if (currentMode === "mocap") {
+          const r = await fetch("/api/mocap");
+          const data = await r.json();
+          document.getElementById("hud-sign").textContent = data.sign;
+          document.getElementById("hud-sub").textContent = `MODE : MOTION CAPTURE WEBCAM (${(data.confidence*100).toFixed(1)}%)`;
+          applyRigState(data.rig);
+        } else {
+          const glossParam = currentMode === "tts" ? activeGlosses.join(",") : activeSign;
+          const r = await fetch(`/api/pose?glosses=${encodeURIComponent(glossParam)}&progress=${progress.toFixed(4)}`);
+          const data = await r.json();
+          document.getElementById("hud-sign").textContent = data.sign;
+          document.getElementById("hud-sub").textContent =
+            currentMode === "tts" ? `SEQUENCE : ${activeGlosses.join(" → ")}` : `CORPUS LSFB 3D NATIF : ${data.sign}`;
+          applyRigState(data.rig);
+          const step = (0.012 * speed) / Math.max(1, currentMode === "tts" ? activeGlosses.length : 1);
+          progress = (progress + step) % 1.0;
+          document.getElementById("timeline").value = Math.round(progress * 1000);
+        }
+      } catch (e) {}
+      setTimeout(pollFrame, 35);
+    }
+    pollFrame();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener("resize", () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+  </script>
+</body>
+</html>
