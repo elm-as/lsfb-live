@@ -1,8 +1,8 @@
-"""Modèle mathématique du squelette humain rigué 3D et Cinématique Inverse (IK).
+"""Modèle mathématique du squelette humain rigué 3D, FK phalangienne fixe et IK 2-os.
 
 Convertit des repères normalisés (65, 3) ou des repères webcam en un rig humain 3D
-anatomiquement contraint (longueurs d'os constantes, IK 2-segments bras/avant-bras
-et mains articulées à 21 phalanges 3D fidèles au modèle de reconnaissance).
+strictement contraint anatomiquement : longueurs d'os constantes pour les bras et les
+20 segments phalangiens (zéro étirement des doigts), coudes naturels par IK 2-segments.
 """
 
 from dataclasses import dataclass
@@ -11,10 +11,19 @@ import numpy as np
 from lsfb_live.capture.holistic_extractor import FrameLandmarks
 from lsfb_live.landmarks.normalizer import normalize_spatial_coordinates, pack_raw_landmarks
 
-UPPER_ARM_LENGTH = 0.68
-FOREARM_LENGTH = 0.64
+# Proportions anthropométriques canoniques (largeur bi-acromiale = 1.0)
+UPPER_ARM_LENGTH = 0.72
+FOREARM_LENGTH = 0.68
 
-# Offsets anatomiques canoniques des repères crâniens (0..10 : nez, yeux, oreilles, bouche)
+# Chaînes hiérarchiques (parent -> enfant) et longueurs fixes des 20 os de la main
+_HAND_FK_CHAINS: tuple[tuple[tuple[int, int, float], ...], ...] = (
+    ((0, 1, 0.068), (1, 2, 0.056), (2, 3, 0.044), (3, 4, 0.036)),      # Pouce
+    ((0, 5, 0.148), (5, 6, 0.062), (6, 7, 0.038), (7, 8, 0.030)),      # Index
+    ((0, 9, 0.152), (9, 10, 0.068), (10, 11, 0.042), (11, 12, 0.032)), # Majeur
+    ((0, 13, 0.142), (13, 14, 0.062), (14, 15, 0.038), (15, 16, 0.030)), # Annulaire
+    ((0, 17, 0.128), (17, 18, 0.048), (18, 19, 0.030), (19, 20, 0.025)), # Auriculaire
+)
+
 _CANONICAL_FACE_OFFSETS = np.array(
     [
         [0.0, 0.0, 0.0],
@@ -66,13 +75,13 @@ def solve_two_bone_arm_ik(
     """Résout analytiquement la position 3D du coude par Cinématique Inverse (IK à 2 os)."""
     diff = wrist - shoulder
     dist = float(np.linalg.norm(diff))
-    max_reach = UPPER_ARM_LENGTH + FOREARM_LENGTH - 0.02
+    max_reach = UPPER_ARM_LENGTH + FOREARM_LENGTH - 0.03
 
     if dist < 1e-4:
-        return shoulder + np.array([0.0, UPPER_ARM_LENGTH, 0.10], dtype=np.float32)
+        return shoulder + np.array([0.0, UPPER_ARM_LENGTH, 0.12], dtype=np.float32)
 
     forward = diff / dist
-    clamped_dist = min(dist, max_reach)
+    clamped_dist = float(np.clip(dist, 0.20, max_reach))
 
     cos_angle = (
         UPPER_ARM_LENGTH**2 + clamped_dist**2 - FOREARM_LENGTH**2
@@ -80,10 +89,12 @@ def solve_two_bone_arm_ik(
     cos_angle = float(np.clip(cos_angle, -1.0, 1.0))
     sin_angle = float(np.sqrt(max(0.0, 1.0 - cos_angle**2)))
 
+    # Projection orthogonale du vecteur pôle anatomique (vers le bas, l'extérieur et l'arrière)
     bend_axis = pole_dir - np.dot(pole_dir, forward) * forward
     bend_norm = float(np.linalg.norm(bend_axis))
-    if bend_norm < 1e-4:
-        bend_axis = np.array([0.0, 1.0, 0.2], dtype=np.float32)
+    if bend_norm < 1e-3:
+        bend_axis = np.array([float(np.sign(pole_dir[0])) or 1.0, 0.5, 0.5], dtype=np.float32)
+        bend_axis = bend_axis / float(np.linalg.norm(bend_axis))
     else:
         bend_axis = bend_axis / bend_norm
 
@@ -91,27 +102,43 @@ def solve_two_bone_arm_ik(
     return elbow.astype(np.float32)
 
 
+def enforce_anatomical_hand_fk(wrist: np.ndarray, mirrored_hand: np.ndarray) -> np.ndarray:
+    """Reconstruit la main 3D par cinématique directe (FK) à longueurs d'os strictement fixes.
+
+    Préserve l'orientation 3D exacte de chaque phalange tout en empêchant tout étirement
+    ou déformation de perspective des doigts.
+    """
+    constrained = np.zeros((21, 3), dtype=np.float32)
+    constrained[0] = wrist
+
+    for chain in _HAND_FK_CHAINS:
+        for parent_idx, child_idx, bone_len in chain:
+            raw_vec = mirrored_hand[child_idx] - mirrored_hand[parent_idx]
+            norm = float(np.linalg.norm(raw_vec))
+            if norm < 1e-5:
+                unit_dir = np.array([0.0, -1.0, 0.0], dtype=np.float32)
+            else:
+                unit_dir = raw_vec / norm
+            constrained[child_idx] = constrained[parent_idx] + unit_dir * bone_len
+
+    return constrained
+
+
 def build_relaxed_hand_3d(wrist: np.ndarray, is_mirror_left: bool) -> np.ndarray:
-    """Génère une main 3D anatomique à 21 articulations au repos le long du corps."""
+    """Génère une main 3D anatomique à 21 articulations au repos le long de la hanche."""
     hand = np.zeros((21, 3), dtype=np.float32)
     hand[0] = wrist
     side = -1.0 if is_mirror_left else 1.0
+    finger_angles = [-20.0, -7.0, 0.0, 7.0, 15.0]
 
-    finger_angles_deg = [-28.0, -12.0, 0.0, 11.0, 24.0]
-    finger_lengths = [0.16, 0.22, 0.24, 0.22, 0.18]
-
-    for f_idx, (ang, tot_len) in enumerate(zip(finger_angles_deg, finger_lengths)):
-        rad = np.radians(ang * side)
-        dx = float(np.sin(rad))
-        dy = float(np.cos(rad))
-        base_joint = 1 + f_idx * 4
-        for phalanx in range(4):
-            frac = (phalanx + 1) / 4.0
-            curl_z = -0.03 * (frac**2)
-            hand[base_joint + phalanx] = wrist + np.array(
-                [dx * tot_len * frac, dy * tot_len * frac, curl_z],
-                dtype=np.float32,
-            )
+    for chain, ang_deg in zip(_HAND_FK_CHAINS, finger_angles):
+        rad = np.radians(ang_deg * side)
+        base_dir = np.array([np.sin(rad) * 0.35, np.cos(rad), -0.18], dtype=np.float32)
+        base_dir /= float(np.linalg.norm(base_dir))
+        for step, (parent_idx, child_idx, bone_len) in enumerate(chain):
+            curl_dir = base_dir + np.array([-side * 0.12 * step, 0.0, -0.18 * step], dtype=np.float32)
+            curl_dir /= float(np.linalg.norm(curl_dir))
+            hand[child_idx] = hand[parent_idx] + curl_dir * bone_len
     return hand
 
 
@@ -120,49 +147,48 @@ def _extract_mirror_hand_and_wrist(
     default_x: float,
     is_mirror_left: bool,
 ) -> tuple[np.ndarray, np.ndarray, bool]:
-    """Extrait le poignet et les 21 phalanges 3D en préservant la géométrie exacte du signe."""
+    """Extrait le poignet et applique le verrouillage FK des 20 os de la main."""
     local = raw_hand - raw_hand[0:1, :]
     palm_len = float(np.linalg.norm(local[9]))
-    is_valid = (palm_len > 0.04) and (abs(float(raw_hand[0, 0])) < 1.25) and (abs(float(raw_hand[0, 1])) < 1.45)
+    is_valid = (
+        (palm_len > 0.04)
+        and (abs(float(raw_hand[0, 0])) < 1.25)
+        and (abs(float(raw_hand[0, 1])) < 1.35)
+    )
 
     if not is_valid:
-        rest_wrist = np.array([default_x, 0.86, 0.02], dtype=np.float32)
+        rest_wrist = np.array([default_x, 1.12, 0.02], dtype=np.float32)
         return rest_wrist, build_relaxed_hand_3d(rest_wrist, is_mirror_left), False
 
-    # Coordonnées exactes (X, Y) du poignet en vue miroir (-X) et profondeur anatomique Z = -0.18 devant le buste
-    wrist_z = float(np.clip(-0.18 + raw_hand[0, 2] * 0.04, -0.28, -0.08))
+    wrist_z = float(np.clip(-0.26 + raw_hand[0, 2] * 0.05, -0.38, -0.12))
     wrist = np.array([-raw_hand[0, 0], raw_hand[0, 1], wrist_z], dtype=np.float32)
 
-    # Préservation fidèle des vecteurs phalangiens 3D locaux (inversion miroir sur l'axe X uniquement)
-    mirrored_local = local.copy()
-    mirrored_local[:, 0] = -mirrored_local[:, 0]
-    hand_3d = (wrist[np.newaxis, :] + mirrored_local).astype(np.float32)
+    mirrored_raw = local.copy()
+    mirrored_raw[:, 0] = -mirrored_raw[:, 0]
+    hand_3d = enforce_anatomical_hand_fk(wrist, mirrored_raw)
     return wrist, hand_3d, True
 
 
 def retarget_normalized_65_to_rig(landmarks_65_3: np.ndarray) -> RigSkeleton3D:
-    """Convertit un squelette normalisé (65, 3) en RigSkeleton3D fidèle au modèle."""
+    """Convertit un squelette normalisé (65, 3) en RigSkeleton3D anatomiquement contraint."""
     pts = landmarks_65_3.reshape(65, 3).astype(np.float32)
 
-    head_x = float(np.clip(-pts[0, 0], -0.25, 0.25))
-    head_y = float(np.clip(pts[0, 1], -0.85, -0.35))
-    head_center = np.array([head_x, head_y, -0.05], dtype=np.float32)
+    head_x = float(np.clip(-pts[0, 0], -0.18, 0.18))
+    head_y = float(np.clip(pts[0, 1], -0.78, -0.48))
+    head_center = np.array([head_x, head_y, -0.04], dtype=np.float32)
     nose_tip = head_center + np.array([0.0, 0.03, -0.16], dtype=np.float32)
 
     neck = np.array([head_x * 0.35, -0.14, 0.0], dtype=np.float32)
-    pelvis = np.array([0.0, 0.92, 0.04], dtype=np.float32)
+    pelvis = np.array([0.0, 0.96, 0.04], dtype=np.float32)
 
-    left_shoulder = np.array([-pts[11, 0], pts[11, 1], 0.0], dtype=np.float32)
-    right_shoulder = np.array([-pts[12, 0], pts[12, 1], 0.0], dtype=np.float32)
-    if float(np.linalg.norm(left_shoulder[:2] - right_shoulder[:2])) < 0.2:
-        left_shoulder = np.array([-0.50, 0.0, 0.0], dtype=np.float32)
-        right_shoulder = np.array([0.50, 0.0, 0.0], dtype=np.float32)
+    left_shoulder = np.array([-0.48, 0.0, 0.0], dtype=np.float32)
+    right_shoulder = np.array([0.48, 0.0, 0.0], dtype=np.float32)
 
-    left_wrist, left_hand, lh_active = _extract_mirror_hand_and_wrist(pts[23:44], -0.44, True)
-    right_wrist, right_hand, rh_active = _extract_mirror_hand_and_wrist(pts[44:65], 0.44, False)
+    left_wrist, left_hand, lh_active = _extract_mirror_hand_and_wrist(pts[23:44], -0.56, True)
+    right_wrist, right_hand, rh_active = _extract_mirror_hand_and_wrist(pts[44:65], 0.56, False)
 
-    pole_left = np.array([-0.38, 0.85, 0.25], dtype=np.float32)
-    pole_right = np.array([0.38, 0.85, 0.25], dtype=np.float32)
+    pole_left = np.array([-0.55, 1.0, 0.38], dtype=np.float32)
+    pole_right = np.array([0.55, 1.0, 0.38], dtype=np.float32)
     left_elbow = solve_two_bone_arm_ik(left_shoulder, left_wrist, pole_left)
     right_elbow = solve_two_bone_arm_ik(right_shoulder, right_wrist, pole_right)
 
@@ -223,7 +249,7 @@ def interpolate_rig_skeletons(
     rig_b: RigSkeleton3D,
     blend: float,
 ) -> RigSkeleton3D:
-    """Interpole en 3D deux états du rig humain avec lissage cosinus et IK recalculée."""
+    """Interpole en 3D deux états du rig humain avec lissage cosinus, FK et IK recalculées."""
     alpha = float(0.5 - 0.5 * np.cos(np.pi * np.clip(blend, 0.0, 1.0)))
 
     def lerp(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -234,8 +260,11 @@ def interpolate_rig_skeletons(
     ls = lerp(rig_a.left_shoulder, rig_b.left_shoulder)
     rs = lerp(rig_a.right_shoulder, rig_b.right_shoulder)
 
-    le = solve_two_bone_arm_ik(ls, lw, np.array([-0.38, 0.85, 0.25], dtype=np.float32))
-    re = solve_two_bone_arm_ik(rs, rw, np.array([0.38, 0.85, 0.25], dtype=np.float32))
+    le = solve_two_bone_arm_ik(ls, lw, np.array([-0.55, 1.0, 0.38], dtype=np.float32))
+    re = solve_two_bone_arm_ik(rs, rw, np.array([0.55, 1.0, 0.38], dtype=np.float32))
+
+    lh_blend = enforce_anatomical_hand_fk(lw, lerp(rig_a.left_hand, rig_b.left_hand))
+    rh_blend = enforce_anatomical_hand_fk(rw, lerp(rig_a.right_hand, rig_b.right_hand))
 
     return RigSkeleton3D(
         head_center=lerp(rig_a.head_center, rig_b.head_center),
@@ -248,8 +277,8 @@ def interpolate_rig_skeletons(
         right_elbow=re,
         left_wrist=lw,
         right_wrist=rw,
-        left_hand=lerp(rig_a.left_hand, rig_b.left_hand),
-        right_hand=lerp(rig_a.right_hand, rig_b.right_hand),
+        left_hand=lh_blend,
+        right_hand=rh_blend,
         left_hand_active=rig_a.left_hand_active if alpha < 0.5 else rig_b.left_hand_active,
         right_hand_active=rig_a.right_hand_active if alpha < 0.5 else rig_b.right_hand_active,
     )

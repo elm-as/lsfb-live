@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>LSFB Studio V3 — Rig Humain 3D & Text-to-Sign</title>
+  <title>LSFB Studio V3 — Modèle Humain Rigué 3D (67 Os Mixamo)</title>
   <style>
     :root {
       --bg-void: #0a0c10;
@@ -12,7 +12,6 @@
       --text-muted: #8b9bb4;
       --accent-amber: #f59e0b;
       --accent-emerald: #10b981;
-      --accent-cyan: #0ea5e9;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -33,12 +32,9 @@
       padding: 16px;
       gap: 14px;
     }
-    .brand {
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 12px;
-    }
+    .brand { border-bottom: 1px solid var(--border); padding-bottom: 12px; }
     .brand-tag {
-      font-family: "JetBrains Mono", Consolas, monospace;
+      font-family: Consolas, monospace;
       font-size: 11px;
       letter-spacing: 0.08em;
       color: var(--accent-amber);
@@ -84,7 +80,7 @@
     }
     textarea {
       width: 100%;
-      height: 62px;
+      height: 60px;
       background: #07090d;
       border: 1px solid var(--border);
       color: var(--text-main);
@@ -136,16 +132,10 @@
       border-color: var(--accent-emerald);
       background: #142423;
     }
-    .viewport {
-      position: relative;
-      width: 100%;
-      height: 100vh;
-    }
+    .viewport { position: relative; width: 100%; height: 100vh; }
     .hud-top {
       position: absolute;
-      top: 16px;
-      left: 16px;
-      right: 16px;
+      top: 16px; left: 16px; right: 16px;
       display: flex;
       justify-content: space-between;
       pointer-events: none;
@@ -161,15 +151,13 @@
     .hud-meta { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-top: 3px; }
     .controls-bar {
       position: absolute;
-      bottom: 16px;
-      left: 16px;
-      right: 16px;
+      bottom: 16px; left: 16px; right: 16px;
       background: rgba(13, 16, 23, 0.92);
       border: 1px solid var(--border);
       padding: 10px 16px;
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
       font-family: Consolas, monospace;
       font-size: 12px;
     }
@@ -182,6 +170,7 @@
       font-size: 11px;
       cursor: pointer;
     }
+    .cam-btn:hover { border-color: var(--accent-amber); }
     input[type="range"] { flex: 1; accent-color: var(--accent-amber); }
   </style>
   <script type="importmap">
@@ -196,8 +185,8 @@
 <body>
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-tag">ElmasCore · LSFB V3 Rig</div>
-      <h1>Studio Humain Rigué 3D</h1>
+      <div class="brand-tag">ElmasCore · SkinnedMixamo 67-Bones</div>
+      <h1>Modèle Humain Rigué V3</h1>
     </div>
 
     <div class="mode-tabs">
@@ -206,174 +195,97 @@
       <button class="tab-btn" id="tab-mocap" onclick="setMode('mocap')">MoCap Live</button>
     </div>
 
-    <div class="section-box" id="tts-box">
+    <div class="section-box">
       <div class="section-label">Traduction Français → Séquence 3D LSFB</div>
       <textarea id="fr-input">Mon papa aime toujours la famille et explique l'histoire à l'école</textarea>
-      <button class="btn-primary" onclick="translateAndPlay()">Traduire & Animer en 3D</button>
+      <button class="btn-primary" onclick="translateAndPlay()">Traduire & Animer l'Humain 3D</button>
       <div class="gloss-strip" id="gloss-output">GLOSES : PAPA → AIMER → TOUJOURS → FAMILLE → EXPLIQUER → HISTOIRE → ECOLE</div>
     </div>
 
-    <div class="section-label">Répertoire des 30 Signes Natifs 3D (IK + 42 Phalanges)</div>
+    <div class="section-label">Répertoire 30 Signes (Quaternions + 30 Os Phalangiens)</div>
     <div class="sign-grid" id="sign-grid"></div>
   </aside>
 
   <main class="viewport" id="viewport">
     <div class="hud-top">
       <div class="hud-card">
-        <div class="hud-sign" id="hud-sign">PAPA</div>
-        <div class="hud-meta" id="hud-sub">MODE : TEXT-TO-SIGN 3D | IK 2-SEGMENTS + 42 PHALANGES</div>
+        <div class="hud-sign" id="hud-sign">CHARGEMENT GLB...</div>
+        <div class="hud-meta" id="hud-sub">INITIALISATION DU MAILLAGE HUMAIN 67 OS...</div>
       </div>
       <div class="hud-card">
-        <div class="hud-meta" id="hud-telemetry">FPS: 60 | L-WRIST: (0.00, 0.00) | R-WRIST: (0.00, 0.00)</div>
+        <div class="hud-meta" id="hud-telemetry">RIG: SKINNED MESH 67 BONES | QUATERNION SOLVER</div>
       </div>
     </div>
 
     <div class="controls-bar">
       <span>VITESSE :</span>
-      <button class="cam-btn" onclick="setSpeed(0.4)">0.4x</button>
+      <button class="cam-btn" onclick="setSpeed(0.35)">0.35x</button>
+      <button class="cam-btn" onclick="setSpeed(0.65)">0.65x</button>
       <button class="cam-btn" onclick="setSpeed(1.0)">1.0x</button>
       <input type="range" id="timeline" min="0" max="1000" value="0" />
-      <button class="cam-btn" onclick="setCameraView(0, 0.1, 2.35)">Face 0°</button>
-      <button class="cam-btn" onclick="setCameraView(1.15, 0.15, 2.15)">Profil 30°</button>
-      <button class="cam-btn" onclick="setCameraView(-1.15, 0.25, 2.15)">Oblique G</button>
+      <button class="cam-btn" onclick="setCameraView(0, 1.44, 1.45)">Face</button>
+      <button class="cam-btn" onclick="setCameraView(0.85, 1.44, 1.25)">Profil 35°</button>
+      <button class="cam-btn" onclick="setCameraView(0, 1.38, 0.92)">Mains</button>
     </div>
   </main>
 
   <script type="module">
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-
-    const HAND_EDGES = [
-      [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8],
-      [0,9],[9,10],[10,11],[11,12], [0,13],[13,14],[14,15],[15,16],
-      [0,17],[17,18],[18,19],[19,20], [5,9],[9,13],[13,17],[0,17]
-    ];
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { MixamoHumanRigDriver } from "/human_rig_driver.js";
 
     const container = document.getElementById("viewport");
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0c10);
+    scene.background = new THREE.Color(0x0b0e14);
 
-    const grid = new THREE.GridHelper(4, 16, 0x222936, 0x151a24);
-    grid.position.y = -0.95;
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(3.2, 48),
+      new THREE.MeshStandardMaterial({ color: 0x111620, roughness: 0.85 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const grid = new THREE.GridHelper(5, 20, 0x242d3d, 0x161b26);
+    grid.position.y = 0.002;
     scene.add(grid);
 
-    const camera = new THREE.PerspectiveCamera(42, container.clientWidth / container.clientHeight, 0.1, 50);
-    camera.position.set(0, 0.1, 2.35);
+    const camera = new THREE.PerspectiveCamera(38, container.clientWidth / container.clientHeight, 0.05, 40);
+    camera.position.set(0, 1.44, 1.45);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
     container.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, -0.05, 0);
+    controls.target.set(0, 1.32, 0);
     controls.enableDamping = true;
 
-    scene.add(new THREE.AmbientLight(0xdbeafe, 0.65));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.35);
-    keyLight.position.set(1.8, 2.5, 2.5);
+    scene.add(new THREE.HemisphereLight(0xe2e8f0, 0x1e293b, 0.9));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.65);
+    keyLight.position.set(1.6, 2.8, 2.4);
+    keyLight.castShadow = true;
     scene.add(keyLight);
-    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.55);
-    rimLight.position.set(-2.0, 1.2, -1.8);
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.65);
+    rimLight.position.set(-2.0, 2.0, -1.6);
     scene.add(rimLight);
 
-    const matTorso = new THREE.MeshStandardMaterial({ color: 0x242c3a, roughness: 0.45, metalness: 0.2 });
-    const matHead = new THREE.MeshStandardMaterial({ color: 0xd8e0ea, roughness: 0.35, metalness: 0.1 });
-    const matArm = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.35, metalness: 0.2 });
-    const matJoint = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.25, metalness: 0.3 });
-    const matLeftHand = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3 });
-    const matRightHand = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.3 });
-    const matTip = new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0x422006 });
-
-    function makeBone(mat, radius) {
-      const geo = new THREE.CylinderGeometry(radius * 0.85, radius, 1, 14);
-      const mesh = new THREE.Mesh(geo, mat);
-      scene.add(mesh);
-      return mesh;
-    }
-    function makeSphere(mat, r) {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 16), mat);
-      scene.add(m);
-      return m;
-    }
-
-    const headMesh = makeSphere(matHead, 0.17);
-    headMesh.scale.set(0.88, 1.08, 0.92);
-    const noseMesh = makeSphere(matJoint, 0.028);
-    const chestMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.32, 0.88, 16), matTorso);
-    chestMesh.scale.set(1.0, 1.0, 0.48);
-    scene.add(chestMesh);
-
-    const neckBone = makeBone(matHead, 0.055);
-    const collarL = makeBone(matTorso, 0.045);
-    const collarR = makeBone(matTorso, 0.045);
-    const upperArmL = makeBone(matArm, 0.062);
-    const upperArmR = makeBone(matArm, 0.062);
-    const foreArmL = makeBone(matArm, 0.052);
-    const foreArmR = makeBone(matArm, 0.052);
-
-    const joints = ["ls", "rs", "le", "re", "lw", "rw"].map(() => makeSphere(matJoint, 0.062));
-    const handLeftBones = HAND_EDGES.map(() => makeBone(matLeftHand, 0.015));
-    const handRightBones = HAND_EDGES.map(() => makeBone(matRightHand, 0.015));
-    const tipsSet = new Set([4, 8, 12, 16, 20]);
-    const handLeftJoints = Array.from({ length: 21 }, (_, i) => makeSphere(tipsSet.has(i) ? matTip : matLeftHand, tipsSet.has(i) ? 0.021 : 0.015));
-    const handRightJoints = Array.from({ length: 21 }, (_, i) => makeSphere(tipsSet.has(i) ? matTip : matRightHand, tipsSet.has(i) ? 0.021 : 0.015));
-
-    const upVec = new THREE.Vector3(0, 1, 0);
-    function alignBone(mesh, pA, pB) {
-      const dist = pA.distanceTo(pB);
-      if (dist < 1e-4) { mesh.visible = false; return; }
-      mesh.visible = true;
-      mesh.position.copy(pA).add(pB).multiplyScalar(0.5);
-      mesh.scale.set(1, dist, 1);
-      const dir = new THREE.Vector3().subVectors(pB, pA).normalize();
-      mesh.quaternion.setFromUnitVectors(upVec, dir);
-    }
-
-    function toVec3(arr) {
-      return new THREE.Vector3(arr[0], -arr[1], -arr[2]);
-    }
-
-    function applyRigState(rig) {
-      const hc = toVec3(rig.head_center);
-      const nt = toVec3(rig.nose_tip);
-      const nk = toVec3(rig.neck);
-      const pv = toVec3(rig.pelvis);
-      const ls = toVec3(rig.left_shoulder);
-      const rs = toVec3(rig.right_shoulder);
-      const le = toVec3(rig.left_elbow);
-      const re = toVec3(rig.right_elbow);
-      const lw = toVec3(rig.left_wrist);
-      const rw = toVec3(rig.right_wrist);
-
-      headMesh.position.copy(hc);
-      noseMesh.position.copy(nt);
-      chestMesh.position.copy(nk).add(pv).multiplyScalar(0.5);
-      alignBone(neckBone, nk, hc);
-      alignBone(collarL, nk, ls);
-      alignBone(collarR, nk, rs);
-      alignBone(upperArmL, ls, le);
-      alignBone(upperArmR, rs, re);
-      alignBone(foreArmL, le, lw);
-      alignBone(foreArmR, re, rw);
-
-      [ls, rs, le, re, lw, rw].forEach((p, idx) => joints[idx].position.copy(p));
-
-      const lhPts = rig.left_hand.map(toVec3);
-      const rhPts = rig.right_hand.map(toVec3);
-      lhPts.forEach((p, i) => handLeftJoints[i].position.copy(p));
-      rhPts.forEach((p, i) => handRightJoints[i].position.copy(p));
-      HAND_EDGES.forEach(([a, b], idx) => {
-        alignBone(handLeftBones[idx], lhPts[a], lhPts[b]);
-        alignBone(handRightBones[idx], rhPts[a], rhPts[b]);
-      });
-
-      document.getElementById("hud-telemetry").textContent =
-        `L-WRIST: (${rig.left_wrist[0].toFixed(2)}, ${rig.left_wrist[1].toFixed(2)}) | R-WRIST: (${rig.right_wrist[0].toFixed(2)}, ${rig.right_wrist[1].toFixed(2)})`;
-    }
+    let rigDriver = null;
+    new GLTFLoader().load("/models/human_rig.glb", (gltf) => {
+      const model = gltf.scene;
+      scene.add(model);
+      rigDriver = new MixamoHumanRigDriver(model);
+      document.getElementById("hud-sign").textContent = "PAPA";
+      document.getElementById("hud-sub").textContent = "MAILLAGE HUMAIN 67 OS ACTIF · TEXT-TO-SIGN";
+    });
 
     let currentMode = "tts";
-    let speed = 1.0;
+    let speed = 0.65;
     let progress = 0.0;
     let activeGlosses = ["PAPA", "AIMER", "TOUJOURS", "FAMILLE", "EXPLIQUER", "HISTOIRE", "ECOLE"];
     let activeSign = "AIMER";
@@ -414,27 +326,31 @@
     });
 
     async function pollFrame() {
-      try {
-        if (currentMode === "mocap") {
-          const r = await fetch("/api/mocap");
-          const data = await r.json();
-          document.getElementById("hud-sign").textContent = data.sign;
-          document.getElementById("hud-sub").textContent = `MODE : MOTION CAPTURE WEBCAM (${(data.confidence*100).toFixed(1)}%)`;
-          applyRigState(data.rig);
-        } else {
-          const glossParam = currentMode === "tts" ? activeGlosses.join(",") : activeSign;
-          const r = await fetch(`/api/pose?glosses=${encodeURIComponent(glossParam)}&progress=${progress.toFixed(4)}`);
-          const data = await r.json();
-          document.getElementById("hud-sign").textContent = data.sign;
-          document.getElementById("hud-sub").textContent =
-            currentMode === "tts" ? `SEQUENCE : ${activeGlosses.join(" → ")}` : `CORPUS LSFB 3D NATIF : ${data.sign}`;
-          applyRigState(data.rig);
-          const step = (0.012 * speed) / Math.max(1, currentMode === "tts" ? activeGlosses.length : 1);
-          progress = (progress + step) % 1.0;
-          document.getElementById("timeline").value = Math.round(progress * 1000);
-        }
-      } catch (e) {}
-      setTimeout(pollFrame, 35);
+      if (rigDriver) {
+        try {
+          if (currentMode === "mocap") {
+            const r = await fetch("/api/mocap");
+            const data = await r.json();
+            document.getElementById("hud-sign").textContent = data.sign;
+            document.getElementById("hud-sub").textContent = `MOCAP LIVE WEBCAM (${(data.confidence*100).toFixed(1)}%)`;
+            rigDriver.applyRigState(data.rig);
+          } else {
+            const glossParam = currentMode === "tts" ? activeGlosses.join(",") : activeSign;
+            const r = await fetch(`/api/pose?glosses=${encodeURIComponent(glossParam)}&progress=${progress.toFixed(4)}`);
+            const data = await r.json();
+            document.getElementById("hud-sign").textContent = data.sign;
+            document.getElementById("hud-sub").textContent =
+              currentMode === "tts" ? `PHRASE : ${activeGlosses.join(" → ")}` : `SIGNE CORPUS 3D : ${data.sign}`;
+            document.getElementById("hud-telemetry").textContent =
+              `RIG 67 OS | MAINS ACTIVES: G=${data.rig.left_hand_active ? "ON" : "REPOS"} D=${data.rig.right_hand_active ? "ON" : "REPOS"}`;
+            rigDriver.applyRigState(data.rig);
+            const step = (0.014 * speed) / Math.max(1, currentMode === "tts" ? activeGlosses.length : 1);
+            progress = (progress + step) % 1.0;
+            document.getElementById("timeline").value = Math.round(progress * 1000);
+          }
+        } catch (e) {}
+      }
+      setTimeout(pollFrame, 33);
     }
     pollFrame();
 
@@ -453,4 +369,3 @@
   </script>
 </body>
 </html>
-

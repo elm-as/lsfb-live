@@ -38,37 +38,46 @@ def serialize_rig_skeleton(rig: RigSkeleton3D) -> dict[str, object]:
         "right_wrist": rig.right_wrist.round(4).tolist(),
         "left_hand": rig.left_hand.round(4).tolist(),
         "right_hand": rig.right_hand.round(4).tolist(),
+        "left_hand_active": rig.left_hand_active,
+        "right_hand_active": rig.right_hand_active,
     }
 
 
 class StudioV3RequestHandler(BaseHTTPRequestHandler):
-    """Gestionnaire HTTP léger servant le Studio Three.js et l'API cinématique 3D."""
+    """Gestionnaire HTTP léger servant le Studio Three.js, le maillage GLB et l'API 3D."""
 
-    html_path = Path("src/lsfb_live/display/web_studio/index.html")
+    web_dir = Path("src/lsfb_live/display/web_studio")
+    glb_path = Path("models/human_rig.glb")
     mocap_provider = None
 
     def log_message(self, format: str, *args: object) -> None:
         return  # Silence les logs HTTP par trame
 
+    def _send_bytes(self, content: bytes, content_type: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
+
     def _send_json(self, payload: dict[str, object]) -> None:
         body = json.dumps(payload).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        self._send_bytes(body, "application/json; charset=utf-8")
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
 
         if parsed.path in ("/", "/index.html"):
-            content = self.html_path.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(content)))
-            self.end_headers()
-            self.wfile.write(content)
+            self._send_bytes((self.web_dir / "index.html").read_bytes(), "text/html; charset=utf-8")
+            return
+
+        if parsed.path == "/human_rig_driver.js":
+            self._send_bytes((self.web_dir / "human_rig_driver.js").read_bytes(), "application/javascript; charset=utf-8")
+            return
+
+        if parsed.path == "/models/human_rig.glb" and self.glb_path.is_file():
+            self._send_bytes(self.glb_path.read_bytes(), "model/gltf-binary")
             return
 
         if parsed.path == "/api/signs":

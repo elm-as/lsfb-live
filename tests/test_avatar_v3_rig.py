@@ -4,6 +4,7 @@ import numpy as np
 
 from lsfb_live.avatar.rig_skeleton import (
     UPPER_ARM_LENGTH,
+    enforce_anatomical_hand_fk,
     interpolate_rig_skeletons,
     retarget_normalized_65_to_rig,
     rig_to_normalized_65,
@@ -67,5 +68,21 @@ def test_rig_to_normalized_65_preserves_hand_geometry() -> None:
     reconstructed = rig_to_normalized_65(rig)
     assert reconstructed.shape == (65, 3)
     assert np.all(np.isfinite(reconstructed))
+
+
+def test_enforce_anatomical_hand_fk_locks_bone_lengths() -> None:
+    """Vérifie que la FK phalangienne empêche tout étirement anormal des doigts."""
+    wrist = np.array([0.0, 0.2, -0.25], dtype=np.float32)
+    stretched_hand = np.zeros((21, 3), dtype=np.float32)
+    # Simule une main étirée 5x trop grande (artefact de perspective)
+    stretched_hand[9] = np.array([0.0, -0.90, 0.0], dtype=np.float32)
+    stretched_hand[10] = np.array([0.0, -1.40, 0.0], dtype=np.float32)
+
+    constrained = enforce_anatomical_hand_fk(wrist, stretched_hand)
+    metacarpal_len = float(np.linalg.norm(constrained[9] - constrained[0]))
+    proximal_len = float(np.linalg.norm(constrained[10] - constrained[9]))
+    assert np.isclose(metacarpal_len, 0.152, atol=1e-4)
+    assert np.isclose(proximal_len, 0.068, atol=1e-4)
+
 
 

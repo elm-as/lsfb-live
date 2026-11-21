@@ -8,8 +8,8 @@
 [![Top-1 Accuracy](https://img.shields.io/badge/Top--1%20Accuracy-81.07%25%20(v1.5)-brightgreen?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 [![Top-5 Accuracy](https://img.shields.io/badge/Top--5%20Accuracy-95.75%25%20(v1.5)-success?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
 [![Balanced Accuracy](https://img.shields.io/badge/Balanced%20Accuracy-80.52%25%20(v1.5)-blue?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Architecture](https://img.shields.io/badge/Architecture-BiStream--MSST%20%2B%203D%20IK%20Rig%20(V3)-purple?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
-[![Tests](https://img.shields.io/badge/Tests-33%20Passing-brightgreen?style=for-the-badge)](#5-architecture-du-projet)
+[![Architecture](https://img.shields.io/badge/Architecture-BiStream--MSST%20%2B%2067--Bone%20GLB%20Rig%20(V3)-purple?style=for-the-badge)](#4-résultats-expérimentaux--évaluation-sur-signeurs-inconnus)
+[![Tests](https://img.shields.io/badge/Tests-35%20Passing-brightgreen?style=for-the-badge)](#5-architecture-du-projet)
 
 *Un pipeline complet de Data Science & Vision 3D : du corpus de poses de l'Université de Namur jusqu'à la classification temps réel (81,1% Top-1) et la synthèse 3D Text-to-Sign par mannequin humain rigué sur CPU.*
 
